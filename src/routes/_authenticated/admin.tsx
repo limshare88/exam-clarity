@@ -87,6 +87,55 @@ function Admin() {
     },
   });
 
+  type Paper = {
+    file_path: string;
+    original_name: string;
+    subject: string;
+    count: number;
+    created_at: string;
+  };
+
+  const { data: papers } = useQuery({
+    queryKey: ["papers"],
+    queryFn: async (): Promise<Paper[]> => {
+      const { data } = await supabase
+        .from("exam_questions")
+        .select("file_path, subject, metadata, created_at")
+        .not("file_path", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      const grouped = new Map<string, Paper>();
+      for (const row of data ?? []) {
+        const path = row.file_path as string;
+        if (!path) continue;
+        const meta = (row.metadata ?? {}) as Record<string, unknown>;
+        const existing = grouped.get(path);
+        if (existing) {
+          existing.count += 1;
+          continue;
+        }
+        grouped.set(path, {
+          file_path: path,
+          original_name: String(meta["original_name"] ?? path.split("/").pop() ?? "Uploaded paper"),
+          subject: row.subject,
+          count: 1,
+          created_at: row.created_at,
+        });
+      }
+      return Array.from(grouped.values());
+    },
+  });
+
+  async function deletePaper(paper: Paper) {
+    const { error } = await supabase.from("exam_questions").delete().eq("file_path", paper.file_path);
+    if (error) { toast.error(error.message); return; }
+    await supabase.storage.from("exam-uploads").remove([paper.file_path]);
+    qc.invalidateQueries({ queryKey: ["papers"] });
+    qc.invalidateQueries({ queryKey: ["questions"] });
+    toast.success(`Removed every question from ${paper.original_name}.`);
+  }
+
+
   async function addQuestion() {
     if (!subject) { toast.error("Choose a subject first."); return; }
     if (!questionText.trim() && !file) { toast.error("Add question text or a file."); return; }
