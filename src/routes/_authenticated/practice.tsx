@@ -68,6 +68,8 @@ function Workspace() {
   const [recording, setRecording] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const startedAt = useRef<number>(Date.now());
+  const seen = useRef<Set<string>>(new Set());
+
 
   const deconstruct = useServerFn(deconstructQuestion);
   const coach = useServerFn(coachStrategy);
