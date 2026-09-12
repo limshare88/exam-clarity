@@ -593,7 +593,11 @@ function Workspace() {
               answerParts.map((part) => (
                 <div key={part.label} className="space-y-3 rounded-2xl border-2 border-border bg-cream p-4">
                   <p className="text-lg font-bold text-primary">{part.label}</p>
+                  {part.context && (
+                    <p className="reading-text text-sm text-muted-foreground">{part.context}</p>
+                  )}
                   <p className="reading-text text-sm text-muted-foreground">{part.text}</p>
+
                   <Textarea
                     rows={5}
                     value={partStrategies[part.label] ?? ""}
