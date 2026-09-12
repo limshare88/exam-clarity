@@ -453,7 +453,43 @@ function Workspace() {
             <p className="text-sm font-semibold text-muted-foreground">
               {active.subject} · {active.board} · {active.marks} marks
             </p>
-            <VocabText text={active.question_text} subject={active.subject} />
+            {active.image_url && (
+              <a
+                href={active.image_url}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-2xl border-2 border-border bg-card p-2"
+              >
+                <img
+                  src={active.image_url}
+                  alt={`Diagram printed with this ${active.subject} question`}
+                  loading="lazy"
+                  className="mx-auto max-h-80 w-auto rounded-xl object-contain"
+                />
+                <span className="mt-2 block text-center text-xs text-muted-foreground">
+                  Tap the picture to see it larger.
+                </span>
+              </a>
+            )}
+
+            {multiPart ? (
+              <div className="space-y-6">
+                {parts.map((part, index) => (
+                  <div
+                    key={`${part.label}-${index}`}
+                    className={part.label ? "border-l-4 border-border pl-4" : ""}
+                  >
+                    {part.label && (
+                      <p className="mb-2 text-lg font-bold text-primary">{part.label}</p>
+                    )}
+                    <VocabText text={part.text} subject={active.subject} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <VocabText text={active.question_text} subject={active.subject} />
+            )}
+
             <p className="text-xs text-muted-foreground">
               Tap any word you are unsure about for a simple meaning.
             </p>
