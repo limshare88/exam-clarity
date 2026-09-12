@@ -93,14 +93,22 @@ export const extractExamQuestions = createServerFn({ method: "POST" })
     const out = await callAI(
       `You are a strict exam-paper extraction engine for ${data.board || "the selected exam board"} ${data.subject} papers.
 Return JSON with one key, questions, containing an array of objects with exactly: question_number, question_text, marks.
-Extract only genuine numbered or clearly labelled assessable questions and their necessary subparts. Combine subparts under their main numbered question unless the paper gives separate total marks and each can stand alone.
-Remove cover pages, candidate instructions, formula-book notices, generic test directions, regulations, contents, page numbers, running headers/footers, blank-page notices, examiner-only text, copyright and publisher lines.
-Preserve formulas, units, values, command words, answer choices, and diagram/table references needed to answer. Do not invent text hidden or missing from the file.
-Read each printed mark allocation such as [4 marks], (3), [Total: 6], or '4 marks'. Store the total integer marks for that extracted question. If subpart marks are printed, sum them. If no reliable mark value is visible, use 1 and set that question's question_text unchanged.
-Do not return examples, section introductions, or general instructions. Return an empty questions array when no genuine exam questions are visible.`,
-      `Extract the core numbered questions from this ${data.subject} paper for ${data.board}. Output valid JSON only.`,
+
+STEP 1 — LOCATE MARKERS. Scan the document for printed numbered problem markers only: "Question 1", "Q2", "3.", "4)", "1(a)", "2 (b) (ii)". A block of text qualifies ONLY if it starts at such a marker. Text with no numbered marker is NEVER a question.
+
+STEP 2 — DELETE FRONT MATTER. Completely discard, and never merge into any question: cover pages, candidate/centre name boxes, exam guidelines, "Information for candidates", "Instructions to candidates", time allowed, materials required, safety instructions, calculator/equipment notices, formula sheets and data sheets, regulations, advice, contents pages, section headings, page numbers, running headers and footers, "Turn over", "End of questions", blank page notices, examiner-use tables, copyright and publisher lines.
+
+STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
+
+STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
+
+Reject any candidate that is an instruction, notice, heading, or general guidance even if a number appears near it. Return an empty questions array if no genuine numbered questions are visible.`,
+      `Find every numbered problem marker in this ${data.subject} paper for ${data.board} and extract only those problems with their marks. Ignore all front matter and instructions. Output valid JSON only.`,
       { mimeType: data.mimeType, data: btoa(binary) },
     );
+
+    const FLUFF =
+      /^(instructions?|information|advice|guidance|materials|equipment|safety|read (these|the) |answer all|write your|time allowed|do not (write|turn)|use black|you may use|calculators?|formula|data sheet|contents|section [a-z]|turn over|end of|blank page|copyright|for examiner)/i;
 
     const candidates = Array.isArray(out["questions"]) ? out["questions"] : [];
     const questions = candidates.flatMap((value): ExtractedExamQuestion[] => {
@@ -109,12 +117,16 @@ Do not return examples, section introductions, or general instructions. Return a
       const questionNumber = String(item["question_number"] ?? "").trim();
       const questionText = String(item["question_text"] ?? "").trim();
       const marks = Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1));
-      if (!questionNumber || questionText.length < 8) return [];
+      // Must carry a real numbered marker, e.g. 1, Q2, 3(a), 4 (b)(ii)
+      if (!/^(q(uestion)?\s*)?\d+\s*(\(?[a-z]\)?)?\s*(\(?(i|ii|iii|iv|v|vi)\)?)?\s*[.)]?$/i.test(questionNumber)) return [];
+      if (questionText.length < 12) return [];
+      if (FLUFF.test(questionText)) return [];
       return [{ question_number: questionNumber, question_text: questionText, marks }];
     });
     if (!questions.length) throw new Error("No numbered exam questions were found in this file.");
     return { questions };
   });
+
 
 export const deconstructQuestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

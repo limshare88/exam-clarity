@@ -68,6 +68,8 @@ function Workspace() {
   const [recording, setRecording] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const startedAt = useRef<number>(Date.now());
+  const seen = useRef<Set<string>>(new Set());
+
 
   const deconstruct = useServerFn(deconstructQuestion);
   const coach = useServerFn(coachStrategy);
@@ -80,16 +82,18 @@ function Workspace() {
   const { data: bank } = useQuery({
     queryKey: ["questions", subject],
     queryFn: async () => {
+      seen.current.clear();
       const { data } = await supabase
         .from("exam_questions")
         .select("id, subject, board, question_text, marks")
         .eq("subject", subject)
         .order("created_at", { ascending: false })
-        .limit(40);
+        .limit(200);
       return data ?? [];
     },
     enabled: Boolean(subject),
   });
+
 
   const boardFor = useCallback(
     (s: string) => subjects.find((x) => x.subject === s)?.board ?? "",
@@ -129,7 +133,14 @@ function Workspace() {
         setActive(null);
         return;
       }
-      const pick = pool[Math.floor(Math.random() * pool.length)]!;
+      // Randomized, non-repeating rotation: reshuffle only once every question has been seen.
+      let remaining = pool.filter((q) => !seen.current.has(q.id));
+      if (!remaining.length) {
+        seen.current.clear();
+        remaining = pool;
+      }
+      const pick = remaining[Math.floor(Math.random() * remaining.length)]!;
+      seen.current.add(pick.id);
       setActive({
         id: pick.id,
         subject: pick.subject,
@@ -145,6 +156,7 @@ function Workspace() {
     }
     else setSecondsLeft(null);
   }, [subject, mode, bank, boardFor, profile, reinforce, resetQuestionState]);
+
 
   // countdown
   useEffect(() => {
