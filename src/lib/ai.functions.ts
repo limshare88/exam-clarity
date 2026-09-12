@@ -70,6 +70,9 @@ export type ExtractedExamQuestion = {
   question_number: string;
   question_text: string;
   marks: number;
+  page: number;
+  has_diagram: boolean;
+  diagram_box: { x: number; y: number; w: number; h: number } | null;
 };
 
 export const extractExamQuestions = createServerFn({ method: "POST" })
@@ -93,23 +96,29 @@ export const extractExamQuestions = createServerFn({ method: "POST" })
 
     const out = await callAI(
       `You are a strict exam-paper extraction engine for ${data.board || "the selected exam board"} ${data.subject} papers.
-Return JSON with one key, questions, containing an array of objects with exactly: question_number, question_text, marks.
+Return JSON with keys: paper_type (string like "Paper 1" or "" if not printed), exam_year (4-digit integer or null), and questions — an array of objects with exactly: question_number, question_text, marks, page, has_diagram, diagram_box.
 
 STEP 1 — LOCATE MARKERS. Scan the document for printed numbered problem markers only: "Question 1", "Q2", "3.", "4)", "1(a)", "2 (b) (ii)". A block of text qualifies ONLY if it starts at such a marker. Text with no numbered marker is NEVER a question.
 
 STEP 2 — DELETE FRONT MATTER. Completely discard, and never merge into any question: cover pages, candidate/centre name boxes, exam guidelines, "Information for candidates", "Instructions to candidates", time allowed, materials required, safety instructions, calculator/equipment notices, formula sheets and data sheets, regulations, advice, contents pages, section headings, page numbers, running headers and footers, "Turn over", "End of questions", blank page notices, examiner-use tables, copyright and publisher lines.
 
-STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
+STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number and keep each subpart's printed label, e.g. "(a) ... (b) ...", exactly where it appears so the text can be broken into blocks later. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
 
 STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
 
+STEP 5 — DIAGRAMS. Decide whether the question has its own diagram, chart, graph, table image, circuit, map or structural illustration printed with it. Set has_diagram true only then. When true, set diagram_box to the tight rectangle around that visual as fractions of the full page: {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner. Exclude surrounding body text from the box. When there is no visual, set has_diagram false and diagram_box null.
+
+STEP 6 — PAGE AND PAPER. Set page to the 1-based page number the question is printed on (use 1 for a single screenshot). Read paper_type and exam_year from the printed cover or running header when visible; otherwise "" and null.
+
 Reject any candidate that is an instruction, notice, heading, or general guidance even if a number appears near it. Return an empty questions array if no genuine numbered questions are visible.`,
-      `Find every numbered problem marker in this ${data.subject} paper for ${data.board} and extract only those problems with their marks. Ignore all front matter and instructions. Output valid JSON only.`,
+      `Find every numbered problem marker in this ${data.subject} paper for ${data.board}, extract only those problems with their marks, note the page and any diagram rectangle, and report the paper type and exam year. Ignore all front matter and instructions. Output valid JSON only.`,
       { mimeType: data.mimeType, data: btoa(binary) },
     );
 
     const FLUFF =
       /^(instructions?|information|advice|guidance|materials|equipment|safety|read (these|the) |answer all|write your|time allowed|do not (write|turn)|use black|you may use|calculators?|formula|data sheet|contents|section [a-z]|turn over|end of|blank page|copyright|for examiner)/i;
+
+    const frac = (value: unknown) => Math.min(1, Math.max(0, Number(value) || 0));
 
     const candidates = Array.isArray(out["questions"]) ? out["questions"] : [];
     const questions = candidates.flatMap((value): ExtractedExamQuestion[] => {
@@ -122,11 +131,37 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
       if (!/^(q(uestion)?\s*)?\d+\s*(\(?[a-z]\)?)?\s*(\(?(i|ii|iii|iv|v|vi)\)?)?\s*[.)]?$/i.test(questionNumber)) return [];
       if (questionText.length < 12) return [];
       if (FLUFF.test(questionText)) return [];
-      return [{ question_number: questionNumber, question_text: questionText, marks }];
+
+      const page = Math.max(1, Math.round(Number(item["page"] ?? 1)) || 1);
+      const rawBox = item["diagram_box"] as Record<string, unknown> | null | undefined;
+      let box: ExtractedExamQuestion["diagram_box"] = null;
+      if (item["has_diagram"] === true && rawBox && typeof rawBox === "object") {
+        const candidate = { x: frac(rawBox["x"]), y: frac(rawBox["y"]), w: frac(rawBox["w"]), h: frac(rawBox["h"]) };
+        // Ignore implausible or page-sized rectangles.
+        if (candidate.w > 0.04 && candidate.h > 0.03 && candidate.w * candidate.h < 0.9) box = candidate;
+      }
+
+      return [
+        {
+          question_number: questionNumber,
+          question_text: questionText,
+          marks,
+          page,
+          has_diagram: box !== null,
+          diagram_box: box,
+        },
+      ];
     });
     if (!questions.length) throw new Error("No numbered exam questions were found in this file.");
-    return { questions };
+
+    const yearValue = Math.round(Number(out["exam_year"] ?? 0));
+    return {
+      questions,
+      paper_type: String(out["paper_type"] ?? "").trim(),
+      exam_year: yearValue >= 1990 && yearValue <= 2100 ? yearValue : null,
+    };
   });
+
 
 
 export const deconstructQuestion = createServerFn({ method: "POST" })
