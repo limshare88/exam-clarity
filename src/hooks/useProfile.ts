@@ -12,6 +12,7 @@ export type Profile = {
   coins: number;
   stars: number;
   onboarded: boolean;
+  active_mascot: string;
 };
 
 export async function fetchProfile(): Promise<Profile | null> {

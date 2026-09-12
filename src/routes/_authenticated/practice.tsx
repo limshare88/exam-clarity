@@ -137,7 +137,10 @@ function Workspace() {
       });
     }
     startedAt.current = Date.now();
-    if (mode === "challenge") setSecondsLeft(profile?.timer_seconds ?? 60);
+    if (mode === "challenge") {
+      const markCount = mode === "reinforce" ? 1 : Math.max(active?.marks ?? 1, 1);
+      setSecondsLeft((profile?.timer_seconds ?? 60) * markCount);
+    }
     else setSecondsLeft(null);
   }, [subject, mode, bank, boardFor, profile, reinforce, resetQuestionState]);
 
@@ -233,7 +236,9 @@ function Workspace() {
     setBusy(null);
   }
 
-  const total = profile?.timer_seconds ?? 60;
+  const total = active && mode === "challenge"
+    ? (profile?.timer_seconds ?? 60) * Math.max(active.marks, 1)
+    : profile?.timer_seconds ?? 60;
   const pct = secondsLeft === null ? 0 : Math.max(0, (secondsLeft / total) * 100);
   const barColor = pct > 60 ? "bg-success" : pct > 25 ? "bg-warning" : "bg-destructive";
 
@@ -412,6 +417,10 @@ function Workspace() {
               <FeedbackBlock title="🧠 Logic" body={feedback.logic_feedback} />
               <FeedbackBlock title="🔢 Sequencing" body={feedback.sequencing_feedback} />
               <FeedbackBlock title="📐 Formulas & rules" body={feedback.formula_feedback} />
+              <div className="rounded-2xl border-2 border-border bg-lavender p-4">
+                <p className="font-bold">{feedback.board_used} standard</p>
+                <p className="reading-text mt-1 text-sm">{feedback.rubric_basis}</p>
+              </div>
               {feedback.missing_steps?.length > 0 && (
                 <div className="rounded-2xl border-2 border-border bg-cream p-4">
                   <p className="font-bold">➕ Steps to add next time</p>

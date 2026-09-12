@@ -31,6 +31,9 @@ export const TIMER_OPTIONS = [
 export type SubjectBoard = { subject: string; board: string };
 
 export const SHOP_ITEMS = [
+  { item_id: "mascot-chibi", item_name: "Mika, Chibi Learner", category: "Mascots", price: 0, emoji: "🌸" },
+  { item_id: "mascot-long-ear", item_name: "Mallow, Long-Eared Friend", category: "Mascots", price: 180, emoji: "🌿" },
+  { item_id: "mascot-robot", item_name: "Pip, Helper Robot", category: "Mascots", price: 240, emoji: "⚡" },
   { item_id: "hat-star", item_name: "Star Beret", category: "Hats", price: 40, emoji: "🎩" },
   { item_id: "hat-bunny", item_name: "Bunny Ears", category: "Hats", price: 60, emoji: "🐰" },
   { item_id: "hat-crown", item_name: "Pastel Crown", category: "Hats", price: 120, emoji: "👑" },
