@@ -218,6 +218,15 @@ export const lookupWord = createServerFn({ method: "POST" })
     return record;
   });
 
+export type CoachPartFeedback = {
+  label: string;
+  score: number;
+  logic_feedback: string;
+  sequencing_feedback: string;
+  formula_feedback: string;
+  missing_steps: string[];
+};
+
 export const coachStrategy = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -227,9 +236,22 @@ export const coachStrategy = createServerFn({ method: "POST" })
       board: string;
       strategy: string;
       marks: number;
+      parts?: { label: string; question_text: string; strategy: string }[];
     }) => input,
   )
   .handler(async ({ data }) => {
+    const parts = (data.parts ?? []).filter((p) => p.question_text.trim().length > 0);
+    const multi = parts.length > 1;
+
+    const partsBrief = multi
+      ? parts
+          .map(
+            (p) =>
+              `SUB-QUESTION ${p.label || "(main)"}:\n${p.question_text}\nHer strategy for ${p.label || "this part"}:\n${p.strategy.trim() || "(left blank)"}`,
+          )
+          .join("\n\n")
+      : `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`;
+
     const out = await callAI(
       `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${data.board || "the selected exam board"} for ${data.subject}.
 Treat the named board as binding. Do not blend in conventions from another board. Interpret command words exactly as that board does. Allocate credit in proportion to this question's ${data.marks} available marks, including method, accuracy, independent, consequential, or equivalent marks where that board uses them.
@@ -237,11 +259,41 @@ You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether
 SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(data.subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
 You completely ignore missing numerical working, missing final answers, missing paragraph descriptions, missing raw data calculations, missing essays, missing text transformations, spelling and grammar. Never ask for calculations.
 Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively.
-Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`,
-      `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`,
+${
+  multi
+    ? `This question has ${parts.length} separate sub-questions and she wrote a separate blueprint for each. Grade EVERY sub-question independently on its own merits: never let one part's quality change another part's judgement, and never merge them. A blank part scores 0 with a calm prompt about what its first step should have been.
+Reply as JSON with keys: part_feedback (array, one object per sub-question in the same order, each with label (copy the given label exactly), score (0-100 integer), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected for THAT part), missing_steps (array of short strings)), score (0-100 integer overall, the average across the parts), board_used, rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), struggle_tags (array of 1-4 short lowercase tags), encouragement (one warm short sentence about the whole question).`
+    : `Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`
+}`,
+      multi
+        ? `Whole question (${data.marks} marks total):\n${data.questionText}\n\n${partsBrief}`
+        : partsBrief,
     );
+
+    const rawParts = Array.isArray(out["part_feedback"]) ? out["part_feedback"] : [];
+    const part_feedback: CoachPartFeedback[] = rawParts.flatMap((value, index): CoachPartFeedback[] => {
+      if (!value || typeof value !== "object") return [];
+      const item = value as Record<string, unknown>;
+      return [
+        {
+          label: String(item["label"] ?? parts[index]?.label ?? ""),
+          score: Number(item["score"] ?? 0),
+          logic_feedback: String(item["logic_feedback"] ?? ""),
+          sequencing_feedback: String(item["sequencing_feedback"] ?? ""),
+          formula_feedback: String(item["formula_feedback"] ?? ""),
+          missing_steps: (item["missing_steps"] ?? []) as string[],
+        },
+      ];
+    });
+
+    const overall = Number(out["score"] ?? 0);
+    const averaged =
+      part_feedback.length && !overall
+        ? Math.round(part_feedback.reduce((sum, p) => sum + p.score, 0) / part_feedback.length)
+        : overall;
+
     return {
-      score: Number(out["score"] ?? 0),
+      score: averaged,
       board_used: String(out["board_used"] ?? data.board),
       rubric_basis: String(out["rubric_basis"] ?? `${data.board} command-word and method-mark conventions.`),
       logic_feedback: String(out["logic_feedback"] ?? ""),
@@ -250,8 +302,10 @@ Reply as JSON with keys: score (0-100 integer for strategy quality), board_used 
       missing_steps: (out["missing_steps"] ?? []) as string[],
       struggle_tags: (out["struggle_tags"] ?? []) as string[],
       encouragement: String(out["encouragement"] ?? ""),
+      part_feedback,
     };
   });
+
 
 export const generateReinforceQuestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
