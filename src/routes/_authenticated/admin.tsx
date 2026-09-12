@@ -70,6 +70,8 @@ function Admin() {
   const [busy, setBusy] = useState(false);
   const [duplicateName, setDuplicateName] = useState<string | null>(null);
   const extractQuestions = useServerFn(extractExamQuestions);
+  const readMarkScheme = useServerFn(extractMarkScheme);
+
 
 
   const [timeframe, setTimeframe] = useState<"all" | "month" | "custom">("all");
