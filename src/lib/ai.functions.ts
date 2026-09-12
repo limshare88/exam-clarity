@@ -476,14 +476,20 @@ export const coachStrategy = createServerFn({ method: "POST" })
       : `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`;
 
     const out = await callAI(
-      `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${data.board || "the selected exam board"} for ${data.subject}.
+      `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${board || "the selected exam board"} for ${subject}.
 Treat the named board as binding. Do not blend in conventions from another board. Interpret command words exactly as that board does. Allocate credit in proportion to this question's ${data.marks} available marks, including method, accuracy, independent, consequential, or equivalent marks where that board uses them.
 You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether the correct formulas, rules or techniques were named.
-SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(data.subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
+SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
 You completely ignore missing numerical working, missing final answers, missing paragraph descriptions, missing raw data calculations, missing essays, missing text transformations, spelling and grammar. Never ask for calculations.
 ${
   schemeBrief
-    ? "The official marking scheme for this exact paper is supplied below. Mark strictly against it: credit strategy steps that would earn its listed marking points, and name the marking points she missed."
+    ? `MANDATORY MARK SCHEME CALIBRATION. The official uploaded marking scheme for this paper is supplied at the end of the user message. It overrides your own expectations.
+Before scoring, list to yourself the explicit marking points, threshold expectations and approved keywords it gives for this question. Then:
+- Credit a strategy step only when it would genuinely reach one of those marking points.
+- Score in proportion to how many of the scheme's marking points her plan would secure out of ${data.marks}.
+- In formula_feedback name the exact rules, formulas or approved keywords the scheme requires.
+- In missing_steps name the specific scheme marking points her plan would miss, in the scheme's own wording, simplified into short calm phrases.
+Never contradict the scheme and never invent marking points it does not contain.`
     : "Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively."
 }
 
