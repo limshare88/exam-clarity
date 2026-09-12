@@ -387,7 +387,7 @@ function Workspace() {
             <div className="rounded-2xl border-2 border-border bg-peach p-4">
               <p className="reading-text text-base font-semibold">
                 📝 Goal: State your strategy step-by-step and name the formulas or rules you will
-                use. You do NOT need to calculate the final math working.
+                use. {subjectStrategyRule(active?.subject ?? subject)}
               </p>
             </div>
 
