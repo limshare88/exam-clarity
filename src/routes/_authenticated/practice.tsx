@@ -293,10 +293,11 @@ function Workspace() {
     const payloadParts = multiPart
       ? answerParts.map((p) => ({
           label: p.label,
-          question_text: p.text,
+          question_text: [p.context, p.text].filter(Boolean).join("\n"),
           strategy: partStrategies[p.label] ?? "",
         }))
       : [{ label: "", question_text: active.question_text, strategy }];
+
 
     const combined = multiPart
       ? payloadParts
