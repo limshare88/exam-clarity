@@ -205,8 +205,8 @@ export const extractMarkScheme = createServerFn({ method: "POST" })
       subject: string;
       board: string;
       fileName: string;
-      paperType?: string;
-      examYear?: number | null;
+      paperType?: string | undefined;
+      examYear?: number | null | undefined;
     }) => input,
   )
   .handler(async ({ data, context }) => {
@@ -397,7 +397,7 @@ export const coachStrategy = createServerFn({ method: "POST" })
       strategy: string;
       marks: number;
       paperType?: string | null;
-      examYear?: number | null;
+      examYear?: number | null | undefined;
       questionNumber?: string | null;
       parts?: { label: string; question_text: string; strategy: string }[];
     }) => input,
