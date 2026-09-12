@@ -190,6 +190,138 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
     };
   });
 
+export const MARK_SCHEME_NAME_PATTERN =
+  /(mark[\s_-]*scheme|marking[\s_-]*scheme|marking[\s_-]*criteria|markscheme|\bms\b|_ms[._-]|answer[\s_-]*key|examiner[\s_-]*report)/i;
+
+export type MarkSchemeEntry = { question_number: string; answer_points: string[]; marks: number };
+
+/** Reads an official marking scheme and links it to one subject, paper and year. */
+export const extractMarkScheme = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      filePath: string;
+      mimeType: string;
+      subject: string;
+      board: string;
+      fileName: string;
+      paperType?: string;
+      examYear?: number | null;
+    }) => input,
+  )
+  .handler(async ({ data, context }) => {
+    if (!data.filePath.startsWith(`${context.userId}/`)) throw new Error("This upload does not belong to your account.");
+    if (data.mimeType !== "application/pdf" && !data.mimeType.startsWith("image/")) {
+      throw new Error("Upload a PDF or image file.");
+    }
+
+    const { data: file, error } = await context.supabase.storage.from("exam-uploads").download(data.filePath);
+    if (error || !file) throw new Error(error?.message ?? "The uploaded file could not be read.");
+    if (file.size === 0) throw new Error("The uploaded file is empty.");
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 32768) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+    }
+
+    const out = await callAI(
+      `You read official ${data.board || "exam board"} ${data.subject} MARKING SCHEMES (also called mark schemes, MS, marking criteria or answer keys).
+This document is an answer guide, not a question paper. Do NOT require printed question body text and do NOT reject the document because it has no full questions.
+Return JSON with keys:
+- is_mark_scheme (true when the document is a marking scheme, answer key or marking criteria; false when it is a plain question paper)
+- paper_type (string such as "Paper 1", or "" when not printed)
+- exam_year (4-digit integer or null)
+- scheme_text (a clean plain-text transcription of the whole marking guidance, keeping question labels, accepted answers, method marks, and any generic marking principles, in reading order)
+- entries (array of objects with exactly: question_number (the printed label, e.g. "1", "2(a)", "3(b)(ii)"), answer_points (array of short strings — the accepted answer points, method marks, working steps or credit criteria for that label), marks (integer total for that label, 1 when not printed))
+Transcribe faithfully. Invent nothing. Keep formulas, units and command-word conventions exactly as printed.`,
+      `Transcribe this ${data.subject} document for ${data.board || "the exam board"}. Decide whether it is a marking scheme, then map every marking entry to its question label. Output valid JSON only.`,
+      { mimeType: data.mimeType, data: btoa(binary) },
+    );
+
+    const schemeText = String(out["scheme_text"] ?? "").trim();
+    const rawEntries = Array.isArray(out["entries"]) ? out["entries"] : [];
+    const entries: MarkSchemeEntry[] = rawEntries.flatMap((value): MarkSchemeEntry[] => {
+      if (!value || typeof value !== "object") return [];
+      const item = value as Record<string, unknown>;
+      const points = (Array.isArray(item["answer_points"]) ? item["answer_points"] : [])
+        .map((point) => String(point).trim())
+        .filter(Boolean);
+      if (!points.length) return [];
+      return [
+        {
+          question_number: String(item["question_number"] ?? "").trim(),
+          answer_points: points,
+          marks: Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1)),
+        },
+      ];
+    });
+
+    // Metadata keyword check plus the model's own content check.
+    const detected =
+      out["is_mark_scheme"] === true ||
+      MARK_SCHEME_NAME_PATTERN.test(data.fileName) ||
+      MARK_SCHEME_NAME_PATTERN.test(schemeText.slice(0, 2000));
+
+    if (!detected) {
+      return { detected: false as const, paper_type: "", exam_year: null, scheme_text: "", entries: [] };
+    }
+    if (!schemeText && !entries.length) throw new Error("This marking scheme could not be read. Try a clearer file.");
+
+    const yearValue = Math.round(Number(out["exam_year"] ?? 0));
+    const paperType = (data.paperType ?? "").trim() || String(out["paper_type"] ?? "").trim();
+    const examYear =
+      data.examYear ?? (yearValue >= 1990 && yearValue <= 2100 ? yearValue : null);
+
+    const { error: saveError } = await context.supabase
+      .from("mark_schemes")
+      .upsert(
+        {
+          user_id: context.userId,
+          subject: data.subject,
+          board: data.board || null,
+          paper_type: paperType || null,
+          exam_year: examYear,
+          file_path: data.filePath,
+          original_name: data.fileName,
+          scheme_text: schemeText.slice(0, 200000),
+          entries,
+          metadata: { extracted_by_ai: true, entry_count: entries.length },
+        },
+        { onConflict: "user_id,subject,paper_type,exam_year" },
+      );
+    // Unique index uses COALESCE, so fall back to a manual replace when upsert cannot match it.
+    if (saveError) {
+      await context.supabase
+        .from("mark_schemes")
+        .delete()
+        .eq("user_id", context.userId)
+        .eq("subject", data.subject)
+        .eq("paper_type", paperType || "")
+        .eq("exam_year", examYear ?? 0);
+      const { error: insertError } = await context.supabase.from("mark_schemes").insert({
+        user_id: context.userId,
+        subject: data.subject,
+        board: data.board || null,
+        paper_type: paperType || null,
+        exam_year: examYear,
+        file_path: data.filePath,
+        original_name: data.fileName,
+        scheme_text: schemeText.slice(0, 200000),
+        entries,
+        metadata: { extracted_by_ai: true, entry_count: entries.length },
+      });
+      if (insertError) throw new Error(insertError.message);
+    }
+
+    return {
+      detected: true as const,
+      paper_type: paperType,
+      exam_year: examYear,
+      scheme_text: schemeText,
+      entries,
+    };
+  });
 
 
 export const deconstructQuestion = createServerFn({ method: "POST" })
