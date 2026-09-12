@@ -725,6 +725,31 @@ function Workspace() {
     </AppShell>
   );
 }
+function PartBlock({ part, subject }: { part: QuestionPart; subject: string }) {
+  const nested = part.depth > 0;
+  return (
+    <div
+      className={
+        nested
+          ? "mt-4 border-l-4 border-border/70 pl-4"
+          : part.label
+            ? "rounded-2xl border-2 border-border bg-card/60 p-4"
+            : ""
+      }
+    >
+      {part.label && <p className="mb-2 text-lg font-bold text-primary">{part.label}</p>}
+      {part.text && <VocabText text={part.text} subject={subject} />}
+      {part.children.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {part.children.map((child, index) => (
+            <PartBlock key={`${child.path}-${index}`} part={child} subject={subject} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function FeedbackBlock({ title, body }: { title: string; body: string }) {
   return (
