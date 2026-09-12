@@ -133,6 +133,26 @@ function Admin() {
     },
   });
 
+  const { data: schemes } = useQuery({
+    queryKey: ["mark-schemes"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("mark_schemes")
+        .select("id, subject, paper_type, exam_year, original_name, entries, file_path")
+        .order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  async function deleteScheme(id: string, filePath: string | null) {
+    const { error } = await supabase.from("mark_schemes").delete().eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    if (filePath) await supabase.storage.from("exam-uploads").remove([filePath]);
+    qc.invalidateQueries({ queryKey: ["mark-schemes"] });
+    toast.success("Marking scheme removed.");
+  }
+
+
   async function deletePaper(paper: Paper) {
     const { error } = await supabase.from("exam_questions").delete().eq("file_path", paper.file_path);
     if (error) { toast.error(error.message); return; }
