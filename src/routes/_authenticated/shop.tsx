@@ -71,7 +71,7 @@ function Shop() {
       category: item.category,
       price: item.price,
     });
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     await supabase
       .from("user_profiles")
       .update({ coins: (profile?.coins ?? 0) - item.price })

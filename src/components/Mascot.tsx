@@ -1,10 +1,10 @@
 import { cn } from "@/lib/utils";
 
 type MascotProps = {
-  hat?: string | null;
-  outfit?: string | null;
-  toy?: string | null;
-  wallpaper?: string | null;
+  hat?: string | null | undefined;
+  outfit?: string | null | undefined;
+  toy?: string | null | undefined;
+  wallpaper?: string | null | undefined;
   mood?: "happy" | "cheer" | "calm";
   className?: string;
 };

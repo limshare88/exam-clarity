@@ -83,8 +83,8 @@ function Admin() {
   });
 
   async function addQuestion() {
-    if (!subject) return toast.error("Choose a subject first.");
-    if (!questionText.trim() && !file) return toast.error("Add question text or a file.");
+    if (!subject) { toast.error("Choose a subject first."); return; }
+    if (!questionText.trim() && !file) { toast.error("Add question text or a file."); return; }
     setBusy(true);
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth.user!.id;
@@ -95,7 +95,7 @@ function Admin() {
       const { error: upErr } = await supabase.storage.from("exam-uploads").upload(path, file);
       if (upErr) {
         setBusy(false);
-        return toast.error(upErr.message);
+        { toast.error(upErr.message); return; }
       }
       filePath = path;
     }
@@ -111,7 +111,7 @@ function Admin() {
       file_path: filePath,
     });
     setBusy(false);
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setQuestionText("");
     setFile(null);
     qc.invalidateQueries({ queryKey: ["questions"] });
@@ -136,7 +136,7 @@ function Admin() {
   async function runReset(kind: ResetKind) {
     const range = windowFilter();
     if (timeframe !== "all" && !range) {
-      return toast.error("Please pick the dates for the timeframe first.");
+      { toast.error("Please pick the dates for the timeframe first."); return; }
     }
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth.user!.id;
@@ -148,7 +148,7 @@ function Admin() {
       const { error } = await applyRange(
         supabase.from("session_logs").delete().eq("user_id", uid) as never,
       );
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       await applyRange(supabase.from("vocab_stumble_blocks").delete().eq("user_id", uid) as never);
       qc.invalidateQueries({ queryKey: ["logs", 7] });
       qc.invalidateQueries({ queryKey: ["logs", 30] });
@@ -158,7 +158,7 @@ function Admin() {
       const { error } = await applyRange(
         supabase.from("gamification_inventory").delete().eq("user_id", uid) as never,
       );
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       if (timeframe === "all") {
         await supabase.from("user_profiles").update({ coins: 0, stars: 0 }).eq("user_id", uid);
       }
@@ -170,7 +170,7 @@ function Admin() {
       const { error } = await applyRange(
         supabase.from("exam_questions").delete().eq("user_id", uid) as never,
       );
-      if (error) return toast.error(error.message);
+      if (error) { toast.error(error.message); return; }
       qc.invalidateQueries({ queryKey: ["questions"] });
     }
 
@@ -186,7 +186,7 @@ function Admin() {
 
         <div className="space-y-2">
           <Label className="text-base">Subject</Label>
-          <Select value={subject || undefined} onValueChange={setSubject}>
+          <Select value={subject} onValueChange={setSubject}>
             <SelectTrigger className="tap-lg rounded-2xl border-2 text-base">
               <SelectValue placeholder="Choose subject" />
             </SelectTrigger>

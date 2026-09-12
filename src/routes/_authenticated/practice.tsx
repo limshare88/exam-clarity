@@ -193,7 +193,7 @@ function Workspace() {
 
   async function submitStrategy() {
     if (!active) return;
-    if (strategy.trim().length < 10) return toast.error("Write a couple of steps first.");
+    if (strategy.trim().length < 10) { toast.error("Write a couple of steps first."); return; }
     setBusy("coach");
     try {
       const res = await coach({
@@ -263,7 +263,7 @@ function Workspace() {
           {mode === "reinforce" && "Fresh drills built from your own tricky words and patterns."}
         </p>
 
-        <Select value={subject || undefined} onValueChange={setSubject}>
+        <Select value={subject} onValueChange={setSubject}>
           <SelectTrigger className="tap-lg rounded-2xl border-2 text-base">
             <SelectValue placeholder="Choose subject" />
           </SelectTrigger>

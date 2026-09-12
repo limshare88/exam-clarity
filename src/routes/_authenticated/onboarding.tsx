@@ -59,10 +59,10 @@ function Onboarding() {
   }
 
   async function save() {
-    if (!name.trim()) return toast.error("Please add your name.");
+    if (!name.trim()) { toast.error("Please add your name."); return; }
     const subjects = Object.entries(boards).map(([subject, board]) => ({ subject, board }));
-    if (!subjects.length) return toast.error("Please pick at least one subject.");
-    if (subjects.some((s) => !s.board)) return toast.error("Pick an exam board for each subject.");
+    if (!subjects.length) { toast.error("Please pick at least one subject."); return; }
+    if (subjects.some((s) => !s.board)) { toast.error("Pick an exam board for each subject."); return; }
 
     setBusy(true);
     const { data: auth } = await supabase.auth.getUser();
@@ -77,7 +77,7 @@ function Onboarding() {
       })
       .eq("user_id", auth.user!.id);
     setBusy(false);
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     refresh();
     navigate({ to: "/dashboard" });
   }
@@ -144,7 +144,7 @@ function Onboarding() {
                 {checked && (
                   <div className="mt-3">
                     <Select
-                      value={boards[subject] || undefined}
+                      value={boards[subject] ?? ""}
                       onValueChange={(v) => setBoards((p) => ({ ...p, [subject]: v }))}
                     >
                       <SelectTrigger className="tap-lg rounded-2xl border-2 bg-card text-base">
