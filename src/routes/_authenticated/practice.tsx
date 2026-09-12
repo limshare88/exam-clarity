@@ -515,22 +515,15 @@ function Workspace() {
             {active.schematic && <ExamSchematic diagram={active.schematic} subject={active.subject} />}
 
             {multiPart ? (
-              <div className="space-y-6">
+              <div className="space-y-5">
                 {parts.map((part, index) => (
-                  <div
-                    key={`${part.label}-${index}`}
-                    className={part.label ? "border-l-4 border-border pl-4" : ""}
-                  >
-                    {part.label && (
-                      <p className="mb-2 text-lg font-bold text-primary">{part.label}</p>
-                    )}
-                    <VocabText text={part.text} subject={active.subject} />
-                  </div>
+                  <PartBlock key={`${part.path}-${index}`} part={part} subject={active.subject} />
                 ))}
               </div>
             ) : (
               <VocabText text={active.question_text} subject={active.subject} />
             )}
+
 
             <p className="text-xs text-muted-foreground">
               Tap any word you are unsure about for a simple meaning.
