@@ -144,24 +144,53 @@ function Admin() {
     const uid = auth.user?.id;
     if (!uid) { setBusy(false); toast.error("Please sign in again."); return; }
 
-    let filePath: string | null = null;
+    const filePath: string | null = null;
     if (file) {
+      // Duplicate check against the historical uploads log before any extraction runs.
+      const { data: seen } = await supabase
+        .from("exam_questions")
+        .select("id")
+        .eq("user_id", uid)
+        .eq("metadata->>original_name", file.name)
+        .limit(1);
+      if (seen && seen.length) {
+        setBusy(false);
+        setDuplicateName(file.name);
+        return;
+      }
+
       const path = `${uid}/${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
       const { error: upErr } = await supabase.storage.from("exam-uploads").upload(path, file);
       if (upErr) {
         setBusy(false);
         { toast.error(upErr.message); return; }
       }
-      filePath = path;
       const board = subjects.find((s) => s.subject === subject)?.board ?? "";
       try {
         const result = await extractQuestions({
           data: { filePath: path, mimeType: file.type, subject, board },
         });
-        setUploadedPath(path);
-        setExtracted(result.questions);
+        const rows = result.questions.map((question) => ({
+          user_id: uid,
+          subject,
+          board: board || null,
+          question_text: `${question.question_number}. ${question.question_text}`,
+          marks: question.marks,
+          source_type: file.type.includes("pdf") ? "pdf" : "image",
+          file_path: path,
+          metadata: {
+            question_number: question.question_number,
+            extracted_by_ai: true,
+            original_name: file.name,
+          },
+        }));
+        const { error: insertError } = await supabase.from("exam_questions").insert(rows);
+        if (insertError) throw new Error(insertError.message);
         setBusy(false);
-        toast.success(`${result.questions.length} question${result.questions.length === 1 ? "" : "s"} ready to review.`);
+        setFile(null);
+        qc.invalidateQueries({ queryKey: ["questions"] });
+        qc.invalidateQueries({ queryKey: ["papers"] });
+        toast.success(`${rows.length} question${rows.length === 1 ? "" : "s"} saved automatically.`);
         return;
       } catch (error) {
         await supabase.storage.from("exam-uploads").remove([path]);
@@ -170,6 +199,7 @@ function Admin() {
         return;
       }
     }
+
 
     const board = subjects.find((s) => s.subject === subject)?.board ?? null;
     const { error } = await supabase.from("exam_questions").insert({
