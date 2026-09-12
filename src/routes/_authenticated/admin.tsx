@@ -219,32 +219,6 @@ function Admin() {
     toast.success("Question saved to the question bank.");
   }
 
-  async function saveExtractedQuestions() {
-    if (!uploadedPath || !extracted.length || !subject) return;
-    setBusy(true);
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user?.id;
-    if (!uid) { setBusy(false); toast.error("Please sign in again."); return; }
-    const board = subjects.find((s) => s.subject === subject)?.board ?? null;
-    const rows = extracted.map((question) => ({
-      user_id: uid,
-      subject,
-      board,
-      question_text: `${question.question_number}. ${question.question_text}`,
-      marks: question.marks,
-      source_type: file?.type.includes("pdf") ? "pdf" : "image",
-      file_path: uploadedPath,
-      metadata: { question_number: question.question_number, extracted_by_ai: true },
-    }));
-    const { error } = await supabase.from("exam_questions").insert(rows);
-    setBusy(false);
-    if (error) { toast.error(error.message); return; }
-    setExtracted([]);
-    setUploadedPath(null);
-    setFile(null);
-    qc.invalidateQueries({ queryKey: ["questions"] });
-    toast.success(`${rows.length} reviewed question${rows.length === 1 ? "" : "s"} saved.`);
-  }
 
   function windowFilter() {
     if (timeframe === "month" && month) {
