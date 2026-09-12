@@ -18,10 +18,13 @@ export type Database = {
         Row: {
           board: string | null
           created_at: string
+          exam_year: number | null
           file_path: string | null
           id: string
+          image_url: string | null
           marks: number
           metadata: Json
+          paper_type: string | null
           question_text: string
           source_type: string
           subject: string
@@ -31,10 +34,13 @@ export type Database = {
         Insert: {
           board?: string | null
           created_at?: string
+          exam_year?: number | null
           file_path?: string | null
           id?: string
+          image_url?: string | null
           marks?: number
           metadata?: Json
+          paper_type?: string | null
           question_text: string
           source_type?: string
           subject: string
@@ -44,10 +50,13 @@ export type Database = {
         Update: {
           board?: string | null
           created_at?: string
+          exam_year?: number | null
           file_path?: string | null
           id?: string
+          image_url?: string | null
           marks?: number
           metadata?: Json
+          paper_type?: string | null
           question_text?: string
           source_type?: string
           subject?: string

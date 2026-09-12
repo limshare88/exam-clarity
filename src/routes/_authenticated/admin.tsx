@@ -28,7 +28,9 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { extractExamQuestions } from "@/lib/ai.functions";
+import { cropAndUploadDiagram, renderPaperPages } from "@/lib/diagram-crop";
 import { FileSearch, Trash2 } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
@@ -62,10 +64,13 @@ function Admin() {
   const [subject, setSubject] = useState("");
   const [questionText, setQuestionText] = useState("");
   const [marks, setMarks] = useState("3");
+  const [paperType, setPaperType] = useState("");
+  const [examYear, setExamYear] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [duplicateName, setDuplicateName] = useState<string | null>(null);
   const extractQuestions = useServerFn(extractExamQuestions);
+
 
   const [timeframe, setTimeframe] = useState<"all" | "month" | "custom">("all");
   const [month, setMonth] = useState("");
@@ -170,7 +175,23 @@ function Admin() {
         const result = await extractQuestions({
           data: { filePath: path, mimeType: file.type, subject, board },
         });
-        const rows = result.questions.map((question) => ({
+
+        // Cut every detected diagram out of its page and store it alongside the question.
+        const diagramPages = result.questions.filter((q) => q.diagram_box).map((q) => q.page);
+        const pages = diagramPages.length ? await renderPaperPages(file, diagramPages) : new Map();
+        const imageUrls = new Map<number, string>();
+        for (let i = 0; i < result.questions.length; i += 1) {
+          const question = result.questions[i]!;
+          const canvas = question.diagram_box ? pages.get(question.page) : undefined;
+          if (!question.diagram_box || !canvas) continue;
+          const url = await cropAndUploadDiagram(canvas, question.diagram_box, uid);
+          if (url) imageUrls.set(i, url);
+        }
+
+        const chosenPaper = paperType.trim() || result.paper_type || null;
+        const chosenYear = Number(examYear) || result.exam_year || null;
+
+        const rows = result.questions.map((question, index) => ({
           user_id: uid,
           subject,
           board: board || null,
@@ -178,10 +199,14 @@ function Admin() {
           marks: question.marks,
           source_type: file.type.includes("pdf") ? "pdf" : "image",
           file_path: path,
+          image_url: imageUrls.get(index) ?? null,
+          paper_type: chosenPaper,
+          exam_year: chosenYear,
           metadata: {
             question_number: question.question_number,
             extracted_by_ai: true,
             original_name: file.name,
+            page: question.page,
           },
         }));
         const { error: insertError } = await supabase.from("exam_questions").insert(rows);
@@ -190,7 +215,11 @@ function Admin() {
         setFile(null);
         qc.invalidateQueries({ queryKey: ["questions"] });
         qc.invalidateQueries({ queryKey: ["papers"] });
-        toast.success(`${rows.length} question${rows.length === 1 ? "" : "s"} saved automatically.`);
+        const withDiagrams = imageUrls.size;
+        toast.success(
+          `${rows.length} question${rows.length === 1 ? "" : "s"} saved automatically` +
+            (withDiagrams ? `, ${withDiagrams} with a diagram.` : "."),
+        );
         return;
       } catch (error) {
         await supabase.storage.from("exam-uploads").remove([path]);
@@ -210,6 +239,8 @@ function Admin() {
       marks: Number(marks) || 1,
       source_type: "manual",
       file_path: filePath,
+      paper_type: paperType.trim() || null,
+      exam_year: Number(examYear) || null,
     });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
@@ -218,6 +249,7 @@ function Admin() {
     qc.invalidateQueries({ queryKey: ["questions"] });
     toast.success("Question saved to the question bank.");
   }
+
 
 
   function windowFilter() {
@@ -349,6 +381,40 @@ function Admin() {
             />
           </div>
         </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="paper" className="text-base">
+              Paper
+            </Label>
+            <Input
+              id="paper"
+              value={paperType}
+              onChange={(e) => setPaperType(e.target.value)}
+              placeholder="Paper 1"
+              className="tap-lg rounded-2xl border-2 text-base"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="year" className="text-base">
+              Exam year
+            </Label>
+            <Input
+              id="year"
+              type="number"
+              min={1990}
+              max={2100}
+              value={examYear}
+              onChange={(e) => setExamYear(e.target.value)}
+              placeholder="2025"
+              className="tap-lg rounded-2xl border-2 text-base"
+            />
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Leave Paper and Year empty to let the reader take them from the paper itself.
+        </p>
+
 
         <Button onClick={addQuestion} disabled={busy} className="tap-lg w-full rounded-2xl text-base">
           <FileSearch className="mr-2 h-5 w-5" />

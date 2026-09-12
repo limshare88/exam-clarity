@@ -70,6 +70,9 @@ export type ExtractedExamQuestion = {
   question_number: string;
   question_text: string;
   marks: number;
+  page: number;
+  has_diagram: boolean;
+  diagram_box: { x: number; y: number; w: number; h: number } | null;
 };
 
 export const extractExamQuestions = createServerFn({ method: "POST" })
@@ -93,23 +96,29 @@ export const extractExamQuestions = createServerFn({ method: "POST" })
 
     const out = await callAI(
       `You are a strict exam-paper extraction engine for ${data.board || "the selected exam board"} ${data.subject} papers.
-Return JSON with one key, questions, containing an array of objects with exactly: question_number, question_text, marks.
+Return JSON with keys: paper_type (string like "Paper 1" or "" if not printed), exam_year (4-digit integer or null), and questions — an array of objects with exactly: question_number, question_text, marks, page, has_diagram, diagram_box.
 
 STEP 1 — LOCATE MARKERS. Scan the document for printed numbered problem markers only: "Question 1", "Q2", "3.", "4)", "1(a)", "2 (b) (ii)". A block of text qualifies ONLY if it starts at such a marker. Text with no numbered marker is NEVER a question.
 
 STEP 2 — DELETE FRONT MATTER. Completely discard, and never merge into any question: cover pages, candidate/centre name boxes, exam guidelines, "Information for candidates", "Instructions to candidates", time allowed, materials required, safety instructions, calculator/equipment notices, formula sheets and data sheets, regulations, advice, contents pages, section headings, page numbers, running headers and footers, "Turn over", "End of questions", blank page notices, examiner-use tables, copyright and publisher lines.
 
-STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
+STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number and keep each subpart's printed label, e.g. "(a) ... (b) ...", exactly where it appears so the text can be broken into blocks later. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
 
 STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
 
+STEP 5 — DIAGRAMS. Decide whether the question has its own diagram, chart, graph, table image, circuit, map or structural illustration printed with it. Set has_diagram true only then. When true, set diagram_box to the tight rectangle around that visual as fractions of the full page: {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner. Exclude surrounding body text from the box. When there is no visual, set has_diagram false and diagram_box null.
+
+STEP 6 — PAGE AND PAPER. Set page to the 1-based page number the question is printed on (use 1 for a single screenshot). Read paper_type and exam_year from the printed cover or running header when visible; otherwise "" and null.
+
 Reject any candidate that is an instruction, notice, heading, or general guidance even if a number appears near it. Return an empty questions array if no genuine numbered questions are visible.`,
-      `Find every numbered problem marker in this ${data.subject} paper for ${data.board} and extract only those problems with their marks. Ignore all front matter and instructions. Output valid JSON only.`,
+      `Find every numbered problem marker in this ${data.subject} paper for ${data.board}, extract only those problems with their marks, note the page and any diagram rectangle, and report the paper type and exam year. Ignore all front matter and instructions. Output valid JSON only.`,
       { mimeType: data.mimeType, data: btoa(binary) },
     );
 
     const FLUFF =
       /^(instructions?|information|advice|guidance|materials|equipment|safety|read (these|the) |answer all|write your|time allowed|do not (write|turn)|use black|you may use|calculators?|formula|data sheet|contents|section [a-z]|turn over|end of|blank page|copyright|for examiner)/i;
+
+    const frac = (value: unknown) => Math.min(1, Math.max(0, Number(value) || 0));
 
     const candidates = Array.isArray(out["questions"]) ? out["questions"] : [];
     const questions = candidates.flatMap((value): ExtractedExamQuestion[] => {
@@ -122,11 +131,37 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
       if (!/^(q(uestion)?\s*)?\d+\s*(\(?[a-z]\)?)?\s*(\(?(i|ii|iii|iv|v|vi)\)?)?\s*[.)]?$/i.test(questionNumber)) return [];
       if (questionText.length < 12) return [];
       if (FLUFF.test(questionText)) return [];
-      return [{ question_number: questionNumber, question_text: questionText, marks }];
+
+      const page = Math.max(1, Math.round(Number(item["page"] ?? 1)) || 1);
+      const rawBox = item["diagram_box"] as Record<string, unknown> | null | undefined;
+      let box: ExtractedExamQuestion["diagram_box"] = null;
+      if (item["has_diagram"] === true && rawBox && typeof rawBox === "object") {
+        const candidate = { x: frac(rawBox["x"]), y: frac(rawBox["y"]), w: frac(rawBox["w"]), h: frac(rawBox["h"]) };
+        // Ignore implausible or page-sized rectangles.
+        if (candidate.w > 0.04 && candidate.h > 0.03 && candidate.w * candidate.h < 0.9) box = candidate;
+      }
+
+      return [
+        {
+          question_number: questionNumber,
+          question_text: questionText,
+          marks,
+          page,
+          has_diagram: box !== null,
+          diagram_box: box,
+        },
+      ];
     });
     if (!questions.length) throw new Error("No numbered exam questions were found in this file.");
-    return { questions };
+
+    const yearValue = Math.round(Number(out["exam_year"] ?? 0));
+    return {
+      questions,
+      paper_type: String(out["paper_type"] ?? "").trim(),
+      exam_year: yearValue >= 1990 && yearValue <= 2100 ? yearValue : null,
+    };
   });
+
 
 
 export const deconstructQuestion = createServerFn({ method: "POST" })
@@ -183,6 +218,15 @@ export const lookupWord = createServerFn({ method: "POST" })
     return record;
   });
 
+export type CoachPartFeedback = {
+  label: string;
+  score: number;
+  logic_feedback: string;
+  sequencing_feedback: string;
+  formula_feedback: string;
+  missing_steps: string[];
+};
+
 export const coachStrategy = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -192,9 +236,22 @@ export const coachStrategy = createServerFn({ method: "POST" })
       board: string;
       strategy: string;
       marks: number;
+      parts?: { label: string; question_text: string; strategy: string }[];
     }) => input,
   )
   .handler(async ({ data }) => {
+    const parts = (data.parts ?? []).filter((p) => p.question_text.trim().length > 0);
+    const multi = parts.length > 1;
+
+    const partsBrief = multi
+      ? parts
+          .map(
+            (p) =>
+              `SUB-QUESTION ${p.label || "(main)"}:\n${p.question_text}\nHer strategy for ${p.label || "this part"}:\n${p.strategy.trim() || "(left blank)"}`,
+          )
+          .join("\n\n")
+      : `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`;
+
     const out = await callAI(
       `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${data.board || "the selected exam board"} for ${data.subject}.
 Treat the named board as binding. Do not blend in conventions from another board. Interpret command words exactly as that board does. Allocate credit in proportion to this question's ${data.marks} available marks, including method, accuracy, independent, consequential, or equivalent marks where that board uses them.
@@ -202,11 +259,41 @@ You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether
 SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(data.subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
 You completely ignore missing numerical working, missing final answers, missing paragraph descriptions, missing raw data calculations, missing essays, missing text transformations, spelling and grammar. Never ask for calculations.
 Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively.
-Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`,
-      `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`,
+${
+  multi
+    ? `This question has ${parts.length} separate sub-questions and she wrote a separate blueprint for each. Grade EVERY sub-question independently on its own merits: never let one part's quality change another part's judgement, and never merge them. A blank part scores 0 with a calm prompt about what its first step should have been.
+Reply as JSON with keys: part_feedback (array, one object per sub-question in the same order, each with label (copy the given label exactly), score (0-100 integer), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected for THAT part), missing_steps (array of short strings)), score (0-100 integer overall, the average across the parts), board_used, rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), struggle_tags (array of 1-4 short lowercase tags), encouragement (one warm short sentence about the whole question).`
+    : `Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`
+}`,
+      multi
+        ? `Whole question (${data.marks} marks total):\n${data.questionText}\n\n${partsBrief}`
+        : partsBrief,
     );
+
+    const rawParts = Array.isArray(out["part_feedback"]) ? out["part_feedback"] : [];
+    const part_feedback: CoachPartFeedback[] = rawParts.flatMap((value, index): CoachPartFeedback[] => {
+      if (!value || typeof value !== "object") return [];
+      const item = value as Record<string, unknown>;
+      return [
+        {
+          label: String(item["label"] ?? parts[index]?.label ?? ""),
+          score: Number(item["score"] ?? 0),
+          logic_feedback: String(item["logic_feedback"] ?? ""),
+          sequencing_feedback: String(item["sequencing_feedback"] ?? ""),
+          formula_feedback: String(item["formula_feedback"] ?? ""),
+          missing_steps: (item["missing_steps"] ?? []) as string[],
+        },
+      ];
+    });
+
+    const overall = Number(out["score"] ?? 0);
+    const averaged =
+      part_feedback.length && !overall
+        ? Math.round(part_feedback.reduce((sum, p) => sum + p.score, 0) / part_feedback.length)
+        : overall;
+
     return {
-      score: Number(out["score"] ?? 0),
+      score: averaged,
       board_used: String(out["board_used"] ?? data.board),
       rubric_basis: String(out["rubric_basis"] ?? `${data.board} command-word and method-mark conventions.`),
       logic_feedback: String(out["logic_feedback"] ?? ""),
@@ -215,8 +302,10 @@ Reply as JSON with keys: score (0-100 integer for strategy quality), board_used 
       missing_steps: (out["missing_steps"] ?? []) as string[],
       struggle_tags: (out["struggle_tags"] ?? []) as string[],
       encouragement: String(out["encouragement"] ?? ""),
+      part_feedback,
     };
   });
+
 
 export const generateReinforceQuestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
