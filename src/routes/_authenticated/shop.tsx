@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { Mascot } from "@/components/Mascot";
 import { SHOP_ITEMS } from "@/lib/subjects";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/shop")({
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/_authenticated/shop")({
   component: Shop,
 });
 
-const CATEGORIES = ["Hats", "Outfits", "Desk Toys", "Wallpapers"];
+const CATEGORIES = ["Mascots", "Hats", "Outfits", "Desk Toys", "Wallpapers"] as const;
 
 function Shop() {
   const { data: profile } = useProfile();
@@ -42,7 +43,7 @@ function Shop() {
   });
 
   const owned = useMemo(
-    () => new Set((inventory ?? []).map((i) => i.item_id)),
+    () => new Set(["mascot-chibi", ...(inventory ?? []).map((i) => i.item_id)]),
     [inventory],
   );
   const equipped = useMemo(() => {
@@ -51,19 +52,21 @@ function Shop() {
       .filter((i) => i.equipped)
       .forEach((i) => {
         const item = SHOP_ITEMS.find((s) => s.item_id === i.item_id);
-        if (item) map[item.category] = item.category === "Wallpapers" ? item.item_id : item.emoji;
+        if (item) map[item.category] = item.category === "Wallpapers" || item.category === "Mascots" ? item.item_id : item.emoji;
       });
     return map;
   }, [inventory]);
 
   async function buy(itemId: string) {
-    const item = SHOP_ITEMS.find((i) => i.item_id === itemId)!;
+    const item = SHOP_ITEMS.find((i) => i.item_id === itemId);
+    if (!item) return;
     if ((profile?.coins ?? 0) < item.price) {
       toast.error("Not enough Pulse Coins yet. Finish another drill to earn more.");
       return;
     }
     const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user!.id;
+    const uid = auth.user?.id;
+    if (!uid) { toast.error("Please sign in again."); return; }
     const { error } = await supabase.from("gamification_inventory").insert({
       user_id: uid,
       item_id: item.item_id,
@@ -79,11 +82,21 @@ function Shop() {
     refreshProfile();
     qc.invalidateQueries({ queryKey: ["inventory"] });
     toast.success(`${item.item_name} is yours!`);
+    if (item.category === "Mascots") await equip(item.item_id, item.category);
   }
 
   async function equip(itemId: string, category: string) {
     const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user!.id;
+    const uid = auth.user?.id;
+    if (!uid) { toast.error("Please sign in again."); return; }
+    if (category === "Mascots") {
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({ active_mascot: itemId })
+        .eq("user_id", uid);
+      if (error) { toast.error(error.message); return; }
+      refreshProfile();
+    }
     await supabase
       .from("gamification_inventory")
       .update({ equipped: false })
@@ -109,6 +122,7 @@ function Shop() {
     >
       <section className="surface-card p-4">
         <Mascot
+          character={profile?.active_mascot}
           hat={equipped["Hats"]}
           outfit={equipped["Outfits"]}
           toy={equipped["Desk Toys"]}
@@ -116,20 +130,34 @@ function Shop() {
         />
       </section>
 
-      {CATEGORIES.map((cat) => (
-        <section key={cat} className="surface-card space-y-3 p-5">
+      <Tabs defaultValue="Mascots" className="space-y-4">
+        <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-2xl border-2 border-border bg-card p-1 sm:grid-cols-5">
+          {CATEGORIES.map((cat) => (
+            <TabsTrigger key={cat} value={cat} className="min-h-11 whitespace-normal rounded-xl px-2 text-xs sm:text-sm">
+              {cat}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {CATEGORIES.map((cat) => (
+          <TabsContent key={cat} value={cat} className="space-y-3">
           <h2 className="text-xl font-bold">{cat}</h2>
           <div className="grid grid-cols-2 gap-3">
             {SHOP_ITEMS.filter((i) => i.category === cat).map((item) => {
               const isOwned = owned.has(item.item_id);
               const isEquipped =
-                equipped[cat] === (cat === "Wallpapers" ? item.item_id : item.emoji);
+                cat === "Mascots"
+                  ? profile?.active_mascot === item.item_id
+                  : equipped[cat] === (cat === "Wallpapers" ? item.item_id : item.emoji);
               return (
                 <div
                   key={item.item_id}
                   className="flex flex-col items-center gap-2 rounded-2xl border-2 border-border bg-cream p-4 text-center"
                 >
-                  <span className="text-4xl">{item.emoji}</span>
+                  {cat === "Mascots" ? (
+                    <Mascot character={item.item_id} className="h-40 rounded-xl border" />
+                  ) : (
+                    <span className="text-4xl">{item.emoji}</span>
+                  )}
                   <span className="text-sm font-semibold">{item.item_name}</span>
                   {isOwned ? (
                     <Button
@@ -151,8 +179,9 @@ function Shop() {
               );
             })}
           </div>
-        </section>
-      ))}
+          </TabsContent>
+        ))}
+      </Tabs>
     </AppShell>
   );
 }
