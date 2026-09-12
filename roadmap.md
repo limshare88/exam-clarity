@@ -7,3 +7,5 @@
 - [ ] Rebuild mascot as layered character art.
 - [ ] Add mascot unlock and equip flow to the shop.
 - [ ] Verify AI, build, and key mobile/desktop screens.
+- [ ] Add dynamic monochrome Reinforce schematics for Physics, Chemistry, Biology, and Mathematics.
+- [ ] Verify generated schematic requests and mobile diagram rendering.
