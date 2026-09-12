@@ -318,6 +318,7 @@ export const generateReinforceQuestion = createServerFn({ method: "POST" })
       .from("session_logs")
       .select("struggle_tags, score, subject")
       .eq("user_id", userId)
+      .eq("subject", data.subject)
       .order("created_at", { ascending: false })
       .limit(25);
 
@@ -325,6 +326,7 @@ export const generateReinforceQuestion = createServerFn({ method: "POST" })
       .from("vocab_stumble_blocks")
       .select("word, click_count")
       .eq("user_id", userId)
+      .eq("subject", data.subject)
       .eq("mastered", false)
       .order("click_count", { ascending: false })
       .limit(12);
@@ -334,19 +336,30 @@ export const generateReinforceQuestion = createServerFn({ method: "POST" })
 
     const out = await callAI(
       `${TONE} You write ONE fresh practice exam question in the style of ${data.board || "a major"} exam board for ${data.subject}.
-Target her known struggle patterns and reuse her stumble-block vocabulary naturally inside the question.
+
+STRICT SUBJECT ISOLATION — this is the highest priority rule.
+The ONLY subject is ${data.subject}. Every concept, keyword, scenario, term, formula, unit and symbol must come from the ${data.board || "official"} ${data.subject} syllabus alone.
+It is completely forbidden to mention, borrow or blend content from any other subject. For example: no Physics ideas, symbols (λ, v, f, F=ma) or equations inside a Biology or Chemistry question; no Chemistry reactions inside a Mathematics question; no Biology processes inside a Physics question.
+Use the exact, pure terminology and command words an official ${data.board || "exam board"} examiner would print on a ${data.subject} paper — no invented hybrid wording.
+Before replying, re-read your own question and delete anything that belongs to another subject. If a struggle pattern or vocabulary word below belongs to another subject, ignore it completely rather than forcing it in.
+
+Target her known struggle patterns and reuse her stumble-block vocabulary naturally inside the question, but ONLY where they genuinely belong to ${data.subject}.
 The question must be answerable by describing a strategy (no long calculation required).
 When a visual materially supports the question, include an exam schematic. Use only the diagram kinds allowed for the named subject:
 - Physics: force, circuit, wave, rays.
 - Chemistry: apparatus, bonding.
 - Biology: plant_cell, cell_division, organ.
 - Mathematics: function_graph, integration_area, trig_graph, geometry, circle_theorem.
+Never use a diagram kind from another subject's list.
 The renderer enforces crisp monochrome vectors on a clear background. Keep labels short, literal, widely readable, and essential only. Never request decorative images or colour. The kind value MUST be exactly one token from the subject's list above; do not invent synonyms such as free_body_diagram.
 For function_graph variant use quadratic, cubic, or exponential. For trig_graph use sin, cos, or tan. For apparatus use test_tube, beaker, or distillation. For other kinds use a short descriptive variant.
-Reply as JSON with keys: question_text, marks (integer 2-6), targeted (array of short strings), and schematic. schematic must be null when no diagram is needed, otherwise an object with exactly: kind, title, labels (0-4 short strings), variant, values (0-6 finite numbers). The question text must explicitly refer to the schematic when supplied.`,
-      `Struggle patterns: ${tags.length ? tags.join(", ") : "none recorded yet, use general exam command-word practice"}
-Stumble-block vocabulary: ${vocab.length ? vocab.join(", ") : "none recorded yet"}`,
+Reply as JSON with keys: question_text, marks (integer 2-6), subject_used (must be exactly "${data.subject}"), targeted (array of short strings), and schematic. schematic must be null when no diagram is needed, otherwise an object with exactly: kind, title, labels (0-4 short strings), variant, values (0-6 finite numbers). The question text must explicitly refer to the schematic when supplied.`,
+      `Subject (the only allowed subject): ${data.subject}
+Exam board: ${data.board || "major UK board"}
+Struggle patterns recorded in ${data.subject}: ${tags.length ? tags.join(", ") : "none recorded yet, use general exam command-word practice"}
+Stumble-block vocabulary from ${data.subject}: ${vocab.length ? vocab.join(", ") : "none recorded yet"}`,
     );
+
 
     const allowedBySubject: Record<string, SchematicKind[]> = {
       mathematics: ["function_graph", "integration_area", "trig_graph", "geometry", "circle_theorem"],
