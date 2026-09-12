@@ -529,7 +529,7 @@ Reply as JSON with keys: part_feedback (array, one object per sub-question in th
 
     return {
       score: averaged,
-      board_used: String(out["board_used"] ?? data.board),
+      board_used: String(out["board_used"] ?? board),
       rubric_basis: String(out["rubric_basis"] ?? `${data.board} command-word and method-mark conventions.`),
       logic_feedback: String(out["logic_feedback"] ?? ""),
       sequencing_feedback: String(out["sequencing_feedback"] ?? ""),

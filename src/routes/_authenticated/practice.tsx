@@ -316,6 +316,7 @@ function Workspace() {
           board: active.board,
           strategy: combined,
           marks: active.marks,
+          questionId: active.id,
           paperType: active.paper_type,
           examYear: active.exam_year,
           questionNumber: /^\s*(q?\d+[a-z()i.\s]*)/i.exec(active.question_text)?.[1]?.trim() ?? null,
