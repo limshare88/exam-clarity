@@ -8,6 +8,8 @@ import { AppShell } from "@/components/AppShell";
 import { VocabText } from "@/components/VocabText";
 import { coachStrategy, deconstructQuestion, generateReinforceQuestion } from "@/lib/ai.functions";
 import { subjectStrategyRule } from "@/lib/subjects";
+import { splitQuestionParts } from "@/lib/question-parts";
+
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -44,7 +46,9 @@ type ActiveQuestion = {
   board: string;
   question_text: string;
   marks: number;
+  image_url: string | null;
 };
+
 
 type Deconstructed = {
   core_goal: string;
