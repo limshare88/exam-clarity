@@ -114,8 +114,21 @@ function findMarkers(text: string): Marker[] {
         tokens.push({ raw: tail[1]!, at: tailStart + tail.index, len: tail[0].length });
       }
 
+      // Unbracketed compound style: "1a", "1 b", "9c(ii)".
+      if (!head[2]) {
+        const glued = /^[ \t]*([a-z]{1,3})[).\]]?(?=\s)/i.exec(line.slice(head[0].length));
+        if (glued && /^\d{1,2}$/.test(tokens[0]!.raw)) {
+          tokens.push({
+            raw: glued[1]!,
+            at: head[0].length + glued[0].indexOf(glued[1]!),
+            len: glued[0].length,
+          });
+        }
+      }
+
       const rest = line.slice(head[0].length).trim();
       const valid = rest.length > 0 || tokens.length > 0;
+
       let accepted = 0;
       if (valid) {
         for (const token of tokens) {
