@@ -198,7 +198,7 @@ function Admin() {
       const base = supabase.from(table).delete().eq("user_id", uid);
       const selectedRange = range;
       const query = selectedRange
-        ? base.gte("created_at", selectedRange.start).lt("created_at", selectedRange.end)
+        ? base.gte("created_at", selectedRange.start!).lt("created_at", selectedRange.end!)
         : base;
       const { error } = await query;
       return error;
