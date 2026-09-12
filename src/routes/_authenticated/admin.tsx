@@ -314,7 +314,7 @@ function Admin() {
             {extracted.map((question, index) => (
               <article key={`${question.question_number}-${index}`} className="rounded-2xl border-2 border-border bg-cream p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="font-bold">Question {question.question_number} · {question.marks} marks</p>
+                  <p className="font-bold">Question {question.question_number}</p>
                   <Button
                     type="button"
                     variant="ghost"
@@ -325,7 +325,23 @@ function Admin() {
                     <Trash2 className="h-5 w-5" />
                   </Button>
                 </div>
-                <p className="reading-text mt-2 text-sm">{question.question_text}</p>
+                <label className="mt-2 block text-sm font-bold" htmlFor={`question-text-${index}`}>Question text</label>
+                <Textarea
+                  id={`question-text-${index}`}
+                  value={question.question_text}
+                  onChange={(event) => setExtracted((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, question_text: event.target.value } : item))}
+                  className="reading-text mt-1 min-h-28 rounded-xl bg-card"
+                />
+                <label className="mt-3 block text-sm font-bold" htmlFor={`question-marks-${index}`}>Printed marks</label>
+                <Input
+                  id={`question-marks-${index}`}
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={question.marks}
+                  onChange={(event) => setExtracted((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, marks: Math.max(1, Number(event.target.value) || 1) } : item))}
+                  className="mt-1 h-12 rounded-xl bg-card"
+                />
               </article>
             ))}
           </div>
