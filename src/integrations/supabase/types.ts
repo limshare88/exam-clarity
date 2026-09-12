@@ -144,6 +144,7 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          active_mascot: string
           age: number | null
           coins: number
           created_at: string
@@ -158,6 +159,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          active_mascot?: string
           age?: number | null
           coins?: number
           created_at?: string
@@ -172,6 +174,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          active_mascot?: string
           age?: number | null
           coins?: number
           created_at?: string

@@ -146,6 +146,7 @@ function Dashboard() {
     >
       <section className="surface-card space-y-4 p-4">
         <Mascot
+          character={profile?.active_mascot}
           hat={equipped["Hats"]}
           outfit={equipped["Outfits"]}
           toy={equipped["Desk Toys"]}
