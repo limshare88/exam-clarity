@@ -66,9 +66,9 @@ function Diagram({ diagram }: { diagram: ExamSchematicData }) {
 
 export function ExamSchematic({ diagram, subject }: Props) {
   return (
-    <figure className="overflow-hidden rounded-2xl border-2 border-foreground bg-card p-3 text-foreground">
+    <figure className="overflow-hidden rounded-2xl border-2 border-schematic-ink bg-schematic-paper p-3 text-schematic-ink">
       <figcaption className="mb-2 text-center text-sm font-bold">{diagram.title || `${subject} exam schematic`}</figcaption>
-      <svg viewBox="0 0 320 210" role="img" aria-label={`${subject}: ${diagram.title}`} className="mx-auto block w-full max-w-xl bg-card font-sans text-foreground" style={{ letterSpacing: "0.08em" }}>
+      <svg viewBox="0 0 320 210" role="img" aria-label={`${subject}: ${diagram.title}`} className="schematic-labels mx-auto block w-full max-w-xl bg-schematic-paper font-sans text-schematic-ink">
         <Diagram diagram={diagram} />
       </svg>
     </figure>

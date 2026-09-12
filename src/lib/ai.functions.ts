@@ -360,7 +360,29 @@ Stumble-block vocabulary: ${vocab.length ? vocab.join(", ") : "none recorded yet
     let schematic: ExamSchematicData | null = null;
     if (rawSchematic && typeof rawSchematic === "object") {
       const value = rawSchematic as Record<string, unknown>;
-      const kind = String(value["kind"] ?? "") as SchematicKind;
+      const rawKind = String(value["kind"] ?? "").toLowerCase();
+      const kindAliases: Record<string, SchematicKind> = {
+        free_body_diagram: "force",
+        force_diagram: "force",
+        electrical_circuit: "circuit",
+        circuit_diagram: "circuit",
+        wave_cycle: "wave",
+        ray_diagram: "rays",
+        light_rays: "rays",
+        lab_apparatus: "apparatus",
+        distillation: "apparatus",
+        dot_and_cross: "bonding",
+        dot_cross: "bonding",
+        cell: "plant_cell",
+        mitosis: "cell_division",
+        organ_vector: "organ",
+        coordinate_curve: "function_graph",
+        graph: "function_graph",
+        area_under_curve: "integration_area",
+        trigonometry_graph: "trig_graph",
+        circle: "circle_theorem",
+      };
+      const kind = (kindAliases[rawKind] ?? rawKind) as SchematicKind;
       if (allowed.includes(kind)) {
         schematic = {
           kind,

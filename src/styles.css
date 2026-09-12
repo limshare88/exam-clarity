@@ -49,6 +49,8 @@
   --color-sky: var(--sky);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-schematic-paper: var(--schematic-paper);
+  --color-schematic-ink: var(--schematic-ink);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -99,6 +101,8 @@
 
   --success: oklch(0.68 0.14 150);
   --warning: oklch(0.8 0.13 85);
+  --schematic-paper: oklch(1 0 0);
+  --schematic-ink: oklch(0.12 0 0);
 
   --shadow-ink: oklch(0.75 0.05 300);
 
@@ -133,6 +137,8 @@
   --cream: oklch(0.34 0.03 80);
   --cream-foreground: oklch(0.96 0.015 90);
   --shadow-ink: oklch(0.4 0.04 300);
+  --schematic-paper: oklch(1 0 0);
+  --schematic-ink: oklch(0.12 0 0);
 }
 
 @layer base {
@@ -185,4 +191,10 @@
   letter-spacing: 0.07em;
   line-height: 2.25;
   word-spacing: 0.2em;
+}
+
+@utility schematic-labels {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
