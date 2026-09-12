@@ -27,7 +27,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { extractExamQuestions, type ExtractedExamQuestion } from "@/lib/ai.functions";
+import { extractExamQuestions } from "@/lib/ai.functions";
 import { FileSearch, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
