@@ -396,6 +396,7 @@ export const coachStrategy = createServerFn({ method: "POST" })
       board: string;
       strategy: string;
       marks: number;
+      questionId?: string | null;
       paperType?: string | null;
       examYear?: number | null | undefined;
       questionNumber?: string | null;
@@ -406,32 +407,64 @@ export const coachStrategy = createServerFn({ method: "POST" })
     const parts = (data.parts ?? []).filter((p) => p.question_text.trim().length > 0);
     const multi = parts.length > 1;
 
-    // Pull the official marking scheme saved for this exact subject / paper / year, when one exists.
+    // STEP 1 — read the saved question row so the paper identity comes from the bank,
+    // not only from what the screen passed in.
+    let subject = data.subject;
+    let board = data.board;
+    let paperType = data.paperType ?? null;
+    let examYear = data.examYear ?? null;
+    let questionNumber = (data.questionNumber ?? "").trim();
+    if (data.questionId) {
+      const { data: row } = await context.supabase
+        .from("exam_questions")
+        .select("subject, board, paper_type, exam_year, metadata")
+        .eq("id", data.questionId)
+        .eq("user_id", context.userId)
+        .maybeSingle();
+      if (row) {
+        subject = row.subject || subject;
+        board = row.board || board;
+        paperType = row.paper_type ?? paperType;
+        examYear = row.exam_year ?? examYear;
+        const meta = (row.metadata ?? {}) as Record<string, unknown>;
+        questionNumber = String(meta["question_number"] ?? questionNumber).trim();
+      }
+    }
+
+    // STEP 2 — find the marking scheme linked to this exact subject / paper / year.
+    // Fall back to the same subject's scheme only when no exact paper match exists.
     let schemeBrief = "";
     {
-      let query = context.supabase
+      const { data: schemes } = await context.supabase
         .from("mark_schemes")
         .select("scheme_text, entries, paper_type, exam_year, original_name")
         .eq("user_id", context.userId)
-        .eq("subject", data.subject)
-        .limit(1);
-      if (data.paperType) query = query.eq("paper_type", data.paperType);
-      if (data.examYear) query = query.eq("exam_year", data.examYear);
-      const { data: schemes } = await query;
-      const scheme = schemes?.[0];
+        .eq("subject", subject)
+        .order("updated_at", { ascending: false })
+        .limit(25);
+
+      const list = schemes ?? [];
+      const scheme =
+        list.find((s) => (!paperType || s.paper_type === paperType) && (!examYear || s.exam_year === examYear)) ??
+        list.find((s) => (paperType && s.paper_type === paperType) || (examYear && s.exam_year === examYear)) ??
+        list[0];
+
       if (scheme) {
         const entries = (Array.isArray(scheme.entries) ? scheme.entries : []) as MarkSchemeEntry[];
-        const number = (data.questionNumber ?? "").trim().toLowerCase();
-        const relevant = number
-          ? entries.filter((entry) => String(entry.question_number ?? "").toLowerCase().startsWith(number.split(/[^a-z0-9]/)[0] ?? number))
-          : entries;
-        const lines = (relevant.length ? relevant : entries)
-          .slice(0, 20)
+        const stem = (questionNumber.match(/\d+/)?.[0] ?? "").toLowerCase();
+        const relevant = stem
+          ? entries.filter((entry) => (String(entry.question_number ?? "").match(/\d+/)?.[0] ?? "") === stem)
+          : [];
+        const chosen = relevant.length ? relevant : entries;
+        const lines = chosen
+          .slice(0, 24)
           .map((entry) => `${entry.question_number} (${entry.marks} marks): ${entry.answer_points.join(" | ")}`)
           .join("\n");
-        schemeBrief = `\n\nOFFICIAL MARKING SCHEME for this paper (${scheme.original_name ?? "uploaded scheme"}${scheme.paper_type ? `, ${scheme.paper_type}` : ""}${scheme.exam_year ? `, ${scheme.exam_year}` : ""}):\n${lines || String(scheme.scheme_text ?? "").slice(0, 4000)}`;
+        const exact = (!paperType || scheme.paper_type === paperType) && (!examYear || scheme.exam_year === examYear);
+        schemeBrief = `\n\nOFFICIAL MARKING SCHEME${exact ? " for this exact paper" : " for this subject (closest match)"} (${scheme.original_name ?? "uploaded scheme"}${scheme.paper_type ? `, ${scheme.paper_type}` : ""}${scheme.exam_year ? `, ${scheme.exam_year}` : ""})${relevant.length ? ` — marking points for question ${questionNumber}` : ""}:\n${lines || String(scheme.scheme_text ?? "").slice(0, 4000)}`;
       }
     }
+
 
     const partsBrief = multi
       ? parts
