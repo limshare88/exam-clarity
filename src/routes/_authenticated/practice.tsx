@@ -8,7 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { VocabText } from "@/components/VocabText";
 import { coachStrategy, deconstructQuestion, generateReinforceQuestion } from "@/lib/ai.functions";
 import { subjectStrategyRule } from "@/lib/subjects";
-import { splitQuestionParts } from "@/lib/question-parts";
+import { splitQuestionParts, leafParts, type QuestionPart } from "@/lib/question-parts";
 import { ExamSchematic, type ExamSchematicData } from "@/components/ExamSchematic";
 
 import { Button } from "@/components/ui/button";
@@ -256,8 +256,10 @@ function Workspace() {
     () => (active ? splitQuestionParts(active.question_text) : []),
     [active],
   );
-  const answerParts = useMemo(() => parts.filter((p) => p.label), [parts]);
+  // Only the deepest actionable questions get their own blueprint box.
+  const answerParts = useMemo(() => leafParts(parts), [parts]);
   const multiPart = answerParts.length > 1;
+
 
   const voiceNote =
     "Step 1: I read the command word and underline what it asks for. " +
@@ -291,10 +293,11 @@ function Workspace() {
     const payloadParts = multiPart
       ? answerParts.map((p) => ({
           label: p.label,
-          question_text: p.text,
+          question_text: [p.context, p.text].filter(Boolean).join("\n"),
           strategy: partStrategies[p.label] ?? "",
         }))
       : [{ label: "", question_text: active.question_text, strategy }];
+
 
     const combined = multiPart
       ? payloadParts
@@ -513,22 +516,15 @@ function Workspace() {
             {active.schematic && <ExamSchematic diagram={active.schematic} subject={active.subject} />}
 
             {multiPart ? (
-              <div className="space-y-6">
+              <div className="space-y-5">
                 {parts.map((part, index) => (
-                  <div
-                    key={`${part.label}-${index}`}
-                    className={part.label ? "border-l-4 border-border pl-4" : ""}
-                  >
-                    {part.label && (
-                      <p className="mb-2 text-lg font-bold text-primary">{part.label}</p>
-                    )}
-                    <VocabText text={part.text} subject={active.subject} />
-                  </div>
+                  <PartBlock key={`${part.path}-${index}`} part={part} subject={active.subject} />
                 ))}
               </div>
             ) : (
               <VocabText text={active.question_text} subject={active.subject} />
             )}
+
 
             <p className="text-xs text-muted-foreground">
               Tap any word you are unsure about for a simple meaning.
@@ -597,7 +593,11 @@ function Workspace() {
               answerParts.map((part) => (
                 <div key={part.label} className="space-y-3 rounded-2xl border-2 border-border bg-cream p-4">
                   <p className="text-lg font-bold text-primary">{part.label}</p>
+                  {part.context && (
+                    <p className="reading-text text-sm text-muted-foreground">{part.context}</p>
+                  )}
                   <p className="reading-text text-sm text-muted-foreground">{part.text}</p>
+
                   <Textarea
                     rows={5}
                     value={partStrategies[part.label] ?? ""}
@@ -730,6 +730,31 @@ function Workspace() {
     </AppShell>
   );
 }
+function PartBlock({ part, subject }: { part: QuestionPart; subject: string }) {
+  const nested = part.depth > 0;
+  return (
+    <div
+      className={
+        nested
+          ? "mt-4 border-l-4 border-border/70 pl-4"
+          : part.label
+            ? "rounded-2xl border-2 border-border bg-card/60 p-4"
+            : ""
+      }
+    >
+      {part.label && <p className="mb-2 text-lg font-bold text-primary">{part.label}</p>}
+      {part.text && <VocabText text={part.text} subject={subject} />}
+      {part.children.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {part.children.map((child, index) => (
+            <PartBlock key={`${child.path}-${index}`} part={child} subject={subject} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function FeedbackBlock({ title, body }: { title: string; body: string }) {
   return (
