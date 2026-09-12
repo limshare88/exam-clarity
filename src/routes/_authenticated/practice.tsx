@@ -8,7 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { VocabText } from "@/components/VocabText";
 import { coachStrategy, deconstructQuestion, generateReinforceQuestion } from "@/lib/ai.functions";
 import { subjectStrategyRule } from "@/lib/subjects";
-import { splitQuestionParts } from "@/lib/question-parts";
+import { splitQuestionParts, leafParts, type QuestionPart } from "@/lib/question-parts";
 import { ExamSchematic, type ExamSchematicData } from "@/components/ExamSchematic";
 
 import { Button } from "@/components/ui/button";
