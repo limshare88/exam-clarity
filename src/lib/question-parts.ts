@@ -224,6 +224,8 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
       depth: stack.length,
       text: body,
       children: [],
+    };
+
 
 
     if (parent) parent.node.children.push(node);
