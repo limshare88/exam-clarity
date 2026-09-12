@@ -7,6 +7,7 @@ import { useProfile, useRefreshProfile, awardCoins } from "@/hooks/useProfile";
 import { AppShell } from "@/components/AppShell";
 import { VocabText } from "@/components/VocabText";
 import { coachStrategy, deconstructQuestion, generateReinforceQuestion } from "@/lib/ai.functions";
+import { subjectStrategyRule } from "@/lib/subjects";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -387,7 +388,7 @@ function Workspace() {
             <div className="rounded-2xl border-2 border-border bg-peach p-4">
               <p className="reading-text text-base font-semibold">
                 📝 Goal: State your strategy step-by-step and name the formulas or rules you will
-                use. You do NOT need to calculate the final math working.
+                use. {subjectStrategyRule(active?.subject ?? subject)}
               </p>
             </div>
 

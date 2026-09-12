@@ -49,3 +49,17 @@ export const SHOP_ITEMS = [
 ];
 
 export type ShopItem = (typeof SHOP_ITEMS)[number];
+
+export function subjectStrategyRule(subject: string): string {
+  const s = (subject || "").toLowerCase();
+  if (s.includes("math") || s.includes("physics")) {
+    return "You do NOT need to calculate the final numerical calculations.";
+  }
+  if (s.includes("chemistry") || s.includes("biology")) {
+    return "You do NOT need to write out the full paragraph descriptions or raw data calculations.";
+  }
+  if (s.includes("english")) {
+    return "You do NOT need to write out the full essay responses or complete text transforms.";
+  }
+  return "You do NOT need to write out the full final answer.";
+}
