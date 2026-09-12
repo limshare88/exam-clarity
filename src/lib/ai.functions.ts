@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { subjectStrategyRule } from "@/lib/subjects";
 
 const MODEL = "google/gemini-3.8-flash";
 
