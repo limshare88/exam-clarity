@@ -13,7 +13,7 @@ async function callAI(
   const key = process.env["LOVABLE_API_KEY"];
   if (!key) throw new Error("AI is not configured yet.");
 
-  const content = media
+  const requestContent = media
     ? [
         { type: "text", text: user },
         ...(media.mimeType === "application/pdf"
@@ -35,7 +35,7 @@ async function callAI(
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: system },
-          { role: "user", content },
+          { role: "user", content: requestContent },
         ],
       }),
     });
@@ -54,11 +54,11 @@ async function callAI(
   }
 
   const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = json.choices?.[0]?.message?.content ?? "{}";
+  const responseContent = json.choices?.[0]?.message?.content ?? "{}";
   try {
-    return JSON.parse(content) as Record<string, unknown>;
+    return JSON.parse(responseContent) as Record<string, unknown>;
   } catch {
-    return { raw: content };
+    return { raw: responseContent };
   }
 }
 

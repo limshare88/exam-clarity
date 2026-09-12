@@ -24,9 +24,10 @@ const CHARACTERS: Record<string, { src: string; name: string }> = {
   "mascot-long-ear": { src: longEar, name: "Mallow, the long-eared companion" },
   "mascot-robot": { src: helperRobot, name: "Pip, the helper robot" },
 };
+const DEFAULT_CHARACTER = { src: chibiGirl, name: "Mika, the chibi learner" };
 
 export function Mascot({ hat, outfit, toy, wallpaper, character, className }: MascotProps) {
-  const selected = CHARACTERS[character ?? ""] ?? CHARACTERS["mascot-chibi"];
+  const selected = CHARACTERS[character ?? ""] ?? DEFAULT_CHARACTER;
   return (
     <div
       className={cn(

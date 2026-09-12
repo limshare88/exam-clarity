@@ -128,9 +128,9 @@ function Admin() {
       user_id: uid,
       subject,
       board,
-      question_text: questionText.trim() || `Question from uploaded file: ${file?.name ?? ""}`,
+      question_text: questionText.trim(),
       marks: Number(marks) || 1,
-      source_type: file ? (file.type.includes("pdf") ? "pdf" : "image") : "manual",
+      source_type: "manual",
       file_path: filePath,
     });
     setBusy(false);
@@ -196,8 +196,9 @@ function Admin() {
       table: "session_logs" | "vocab_stumble_blocks" | "exam_questions" | "gamification_inventory",
     ) {
       const base = supabase.from(table).delete().eq("user_id", uid);
-      const query = range
-        ? base.gte("created_at", range.start).lt("created_at", range.end)
+      const selectedRange = range;
+      const query = selectedRange
+        ? base.gte("created_at", selectedRange.start).lt("created_at", selectedRange.end)
         : base;
       const { error } = await query;
       return error;

@@ -106,6 +106,7 @@ function Workspace() {
   const loadNext = useCallback(async () => {
     if (!subject) return;
     resetQuestionState();
+    let nextMarks = 1;
     if (mode === "reinforce") {
       setBusy("reinforce");
       try {
@@ -117,6 +118,7 @@ function Workspace() {
           question_text: res.question_text,
           marks: res.marks,
         });
+        nextMarks = res.marks;
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not build a drill right now.");
       }
@@ -135,11 +137,11 @@ function Workspace() {
         question_text: pick.question_text,
         marks: pick.marks,
       });
+      nextMarks = pick.marks;
     }
     startedAt.current = Date.now();
     if (mode === "challenge") {
-      const markCount = mode === "reinforce" ? 1 : Math.max(active?.marks ?? 1, 1);
-      setSecondsLeft((profile?.timer_seconds ?? 60) * markCount);
+      setSecondsLeft((profile?.timer_seconds ?? 60) * Math.max(nextMarks, 1));
     }
     else setSecondsLeft(null);
   }, [subject, mode, bank, boardFor, profile, reinforce, resetQuestionState]);
