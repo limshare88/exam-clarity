@@ -191,11 +191,12 @@ function Admin() {
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth.user?.id;
     if (!uid) { toast.error("Please sign in again."); return; }
+    const userId = uid;
 
     async function purge(
       table: "session_logs" | "vocab_stumble_blocks" | "exam_questions" | "gamification_inventory",
     ) {
-      const base = supabase.from(table).delete().eq("user_id", uid);
+      const base = supabase.from(table).delete().eq("user_id", userId);
       const selectedRange = range;
       const query = selectedRange
         ? base.gte("created_at", selectedRange.start!).lt("created_at", selectedRange.end!)
