@@ -231,28 +231,61 @@ function Workspace() {
     setBusy(null);
   }
 
-  function toggleMic() {
+  const parts = useMemo(
+    () => (active ? splitQuestionParts(active.question_text) : []),
+    [active],
+  );
+  const answerParts = useMemo(() => parts.filter((p) => p.label), [parts]);
+  const multiPart = answerParts.length > 1;
+
+  const voiceNote =
+    "Step 1: I read the command word and underline what it asks for. " +
+    "Step 2: I list the data given in the question. " +
+    "Step 3: I choose the rule or formula that links them, then say the order I would use it in.";
+
+  function toggleMic(label: string) {
     if (recording) {
-      setRecording(false);
+      setRecording(null);
       return;
     }
-    setRecording(true);
-    // Simulated voice capture: transcribes a spoken strategy into the text box.
+    setRecording(label);
+    // Simulated voice capture: transcribes a spoken strategy into the matching step box.
     setTimeout(() => {
-      setRecording(false);
-      setStrategy((prev) =>
-        (prev ? prev + "\n" : "") +
-        "Step 1: I read the command word and underline what it asks for. " +
-        "Step 2: I list the data given in the question. " +
-        "Step 3: I choose the rule or formula that links them, then say the order I would use it in.",
-      );
-      toast.success("Voice note added to your strategy box.");
+      setRecording(null);
+      if (label === "__single") {
+        setStrategy((prev) => (prev ? prev + "\n" : "") + voiceNote);
+      } else {
+        setPartStrategies((prev) => ({
+          ...prev,
+          [label]: (prev[label] ? prev[label] + "\n" : "") + voiceNote,
+        }));
+      }
+      toast.success("Voice note added to your blueprint box.");
     }, 1800);
   }
 
   async function submitStrategy() {
     if (!active) return;
-    if (strategy.trim().length < 10) { toast.error("Write a couple of steps first."); return; }
+
+    const payloadParts = multiPart
+      ? answerParts.map((p) => ({
+          label: p.label,
+          question_text: p.text,
+          strategy: partStrategies[p.label] ?? "",
+        }))
+      : [{ label: "", question_text: active.question_text, strategy }];
+
+    const combined = multiPart
+      ? payloadParts
+          .map((p) => `${p.label}\n${p.strategy.trim() || "(left blank)"}`)
+          .join("\n\n")
+      : strategy;
+
+    if (combined.replace(/\(left blank\)/g, "").trim().length < 10) {
+      toast.error("Write a couple of steps first.");
+      return;
+    }
+
     setBusy("coach");
     try {
       const res = await coach({
@@ -260,8 +293,9 @@ function Workspace() {
           questionText: active.question_text,
           subject: active.subject,
           board: active.board,
-          strategy,
+          strategy: combined,
           marks: active.marks,
+          parts: payloadParts,
         },
       });
       setFeedback(res);
@@ -276,7 +310,7 @@ function Workspace() {
         marks: active.marks,
         time_seconds: Number(elapsed.toFixed(1)),
         score: res.score,
-        strategy_text: strategy,
+        strategy_text: combined,
         ai_feedback: res,
         struggle_tags: res.struggle_tags ?? [],
       });
@@ -291,6 +325,7 @@ function Workspace() {
     }
     setBusy(null);
   }
+
 
   const total = active && mode === "challenge"
     ? (profile?.timer_seconds ?? 60) * Math.max(active.marks, 1)
