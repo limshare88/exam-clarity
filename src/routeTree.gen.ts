@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedShopRouteImport } from './routes/_authenticated/shop'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   id: '/onboarding',
@@ -33,35 +40,48 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedShopRoute = AuthenticatedShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/shop': typeof AuthenticatedShopRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/shop': typeof AuthenticatedShopRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/shop': typeof AuthenticatedShopRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/onboarding' | '/settings'
+  fullPaths: '/' | '/dashboard' | '/onboarding' | '/settings' | '/shop'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/onboarding' | '/settings'
+  to: '/' | '/dashboard' | '/onboarding' | '/settings' | '/shop'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/_authenticated/dashboard'
     | '/_authenticated/onboarding'
     | '/_authenticated/settings'
+    | '/_authenticated/shop'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -85,6 +105,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/onboarding': {
       id: '/_authenticated/onboarding'
       path: '/onboarding'
@@ -99,17 +126,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/shop': {
+      id: '/_authenticated/shop'
+      path: '/shop'
+      fullPath: '/shop'
+      preLoaderRoute: typeof AuthenticatedShopRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedShopRoute: typeof AuthenticatedShopRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedShopRoute: AuthenticatedShopRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
