@@ -32,7 +32,7 @@ export const Route = createFileRoute("/_authenticated/practice")({
       { property: "og:description", content: "Decode the question, plan the strategy, earn coins." },
     ],
   }),
-  component: Workspace;
+  component: Workspace,
 });
 
 type Mode = "practice" | "challenge" | "reinforce";
