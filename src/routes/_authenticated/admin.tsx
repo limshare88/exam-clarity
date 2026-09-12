@@ -141,23 +141,27 @@ function Admin() {
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth.user!.id;
 
-    const applyRange = <T extends { gte: (c: string, v: string) => T; lt: (c: string, v: string) => T }>(q: T) =>
-      range ? q.gte("created_at", range.start).lt("created_at", range.end) : q;
+    async function purge(
+      table: "session_logs" | "vocab_stumble_blocks" | "exam_questions" | "gamification_inventory",
+    ) {
+      const base = supabase.from(table).delete().eq("user_id", uid);
+      const query = range
+        ? base.gte("created_at", range.start).lt("created_at", range.end)
+        : base;
+      const { error } = await query;
+      return error;
+    }
 
     if (kind === "history") {
-      const { error } = await applyRange(
-        supabase.from("session_logs").delete().eq("user_id", uid) as never,
-      );
+      const error = await purge("session_logs");
       if (error) { toast.error(error.message); return; }
-      await applyRange(supabase.from("vocab_stumble_blocks").delete().eq("user_id", uid) as never);
+      await purge("vocab_stumble_blocks");
       qc.invalidateQueries({ queryKey: ["logs", 7] });
       qc.invalidateQueries({ queryKey: ["logs", 30] });
     }
 
     if (kind === "coins") {
-      const { error } = await applyRange(
-        supabase.from("gamification_inventory").delete().eq("user_id", uid) as never,
-      );
+      const error = await purge("gamification_inventory");
       if (error) { toast.error(error.message); return; }
       if (timeframe === "all") {
         await supabase.from("user_profiles").update({ coins: 0, stars: 0 }).eq("user_id", uid);
@@ -167,12 +171,11 @@ function Admin() {
     }
 
     if (kind === "questions") {
-      const { error } = await applyRange(
-        supabase.from("exam_questions").delete().eq("user_id", uid) as never,
-      );
+      const error = await purge("exam_questions");
       if (error) { toast.error(error.message); return; }
       qc.invalidateQueries({ queryKey: ["questions"] });
     }
+
 
     toast.success("Done. Only the chosen timeframe was cleared.");
     setPending(null);
