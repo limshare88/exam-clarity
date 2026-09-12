@@ -27,7 +27,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { extractExamQuestions } from "@/lib/ai.functions";
+import { extractExamQuestions, extractMarkScheme, MARK_SCHEME_NAME_PATTERN } from "@/lib/ai.functions";
 import { cropAndUploadDiagram, renderPaperPages } from "@/lib/diagram-crop";
 import { FileSearch, Trash2 } from "lucide-react";
 
