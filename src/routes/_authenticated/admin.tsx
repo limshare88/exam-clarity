@@ -382,6 +382,40 @@ function Admin() {
           </div>
         </div>
 
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="paper" className="text-base">
+              Paper
+            </Label>
+            <Input
+              id="paper"
+              value={paperType}
+              onChange={(e) => setPaperType(e.target.value)}
+              placeholder="Paper 1"
+              className="tap-lg rounded-2xl border-2 text-base"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="year" className="text-base">
+              Exam year
+            </Label>
+            <Input
+              id="year"
+              type="number"
+              min={1990}
+              max={2100}
+              value={examYear}
+              onChange={(e) => setExamYear(e.target.value)}
+              placeholder="2025"
+              className="tap-lg rounded-2xl border-2 text-base"
+            />
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Leave Paper and Year empty to let the reader take them from the paper itself.
+        </p>
+
+
         <Button onClick={addQuestion} disabled={busy} className="tap-lg w-full rounded-2xl text-base">
           <FileSearch className="mr-2 h-5 w-5" />
           {busy ? (file ? "Reading paper…" : "Saving…") : file ? "Extract questions" : "Save question"}
