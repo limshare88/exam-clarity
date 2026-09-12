@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,6 +27,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { extractExamQuestions, type ExtractedExamQuestion } from "@/lib/ai.functions";
+import { FileSearch, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
@@ -61,6 +64,9 @@ function Admin() {
   const [marks, setMarks] = useState("3");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
+  const [extracted, setExtracted] = useState<ExtractedExamQuestion[]>([]);
+  const extractQuestions = useServerFn(extractExamQuestions);
 
   const [timeframe, setTimeframe] = useState<"all" | "month" | "custom">("all");
   const [month, setMonth] = useState("");
@@ -87,7 +93,8 @@ function Admin() {
     if (!questionText.trim() && !file) { toast.error("Add question text or a file."); return; }
     setBusy(true);
     const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user!.id;
+    const uid = auth.user?.id;
+    if (!uid) { setBusy(false); toast.error("Please sign in again."); return; }
 
     let filePath: string | null = null;
     if (file) {
@@ -98,6 +105,22 @@ function Admin() {
         { toast.error(upErr.message); return; }
       }
       filePath = path;
+      const board = subjects.find((s) => s.subject === subject)?.board ?? "";
+      try {
+        const result = await extractQuestions({
+          data: { filePath: path, mimeType: file.type, subject, board },
+        });
+        setUploadedPath(path);
+        setExtracted(result.questions);
+        setBusy(false);
+        toast.success(`${result.questions.length} question${result.questions.length === 1 ? "" : "s"} ready to review.`);
+        return;
+      } catch (error) {
+        await supabase.storage.from("exam-uploads").remove([path]);
+        setBusy(false);
+        toast.error(error instanceof Error ? error.message : "This paper could not be read.");
+        return;
+      }
     }
 
     const board = subjects.find((s) => s.subject === subject)?.board ?? null;
@@ -116,6 +139,33 @@ function Admin() {
     setFile(null);
     qc.invalidateQueries({ queryKey: ["questions"] });
     toast.success("Question saved to the question bank.");
+  }
+
+  async function saveExtractedQuestions() {
+    if (!uploadedPath || !extracted.length || !subject) return;
+    setBusy(true);
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth.user?.id;
+    if (!uid) { setBusy(false); toast.error("Please sign in again."); return; }
+    const board = subjects.find((s) => s.subject === subject)?.board ?? null;
+    const rows = extracted.map((question) => ({
+      user_id: uid,
+      subject,
+      board,
+      question_text: `${question.question_number}. ${question.question_text}`,
+      marks: question.marks,
+      source_type: file?.type.includes("pdf") ? "pdf" : "image",
+      file_path: uploadedPath,
+      metadata: { question_number: question.question_number, extracted_by_ai: true },
+    }));
+    const { error } = await supabase.from("exam_questions").insert(rows);
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    setExtracted([]);
+    setUploadedPath(null);
+    setFile(null);
+    qc.invalidateQueries({ queryKey: ["questions"] });
+    toast.success(`${rows.length} reviewed question${rows.length === 1 ? "" : "s"} saved.`);
   }
 
   function windowFilter() {
@@ -139,7 +189,8 @@ function Admin() {
       { toast.error("Please pick the dates for the timeframe first."); return; }
     }
     const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user!.id;
+    const uid = auth.user?.id;
+    if (!uid) { toast.error("Please sign in again."); return; }
 
     async function purge(
       table: "session_logs" | "vocab_stumble_blocks" | "exam_questions" | "gamification_inventory",
@@ -246,9 +297,41 @@ function Admin() {
         </div>
 
         <Button onClick={addQuestion} disabled={busy} className="tap-lg w-full rounded-2xl text-base">
-          {busy ? "Saving…" : "Save question"}
+          <FileSearch className="mr-2 h-5 w-5" />
+          {busy ? (file ? "Reading paper…" : "Saving…") : file ? "Extract questions" : "Save question"}
         </Button>
       </section>
+
+      {extracted.length > 0 && (
+        <section className="surface-card space-y-4 p-5" aria-live="polite">
+          <div>
+            <h2 className="text-xl font-bold">Review extracted questions</h2>
+            <p className="text-sm text-muted-foreground">Only the questions below will be saved. Check the marks before confirming.</p>
+          </div>
+          <div className="space-y-3">
+            {extracted.map((question, index) => (
+              <article key={`${question.question_number}-${index}`} className="rounded-2xl border-2 border-border bg-cream p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-bold">Question {question.question_number} · {question.marks} marks</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove question ${question.question_number}`}
+                    onClick={() => setExtracted((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </Button>
+                </div>
+                <p className="reading-text mt-2 text-sm">{question.question_text}</p>
+              </article>
+            ))}
+          </div>
+          <Button onClick={saveExtractedQuestions} disabled={busy} className="tap-lg w-full rounded-2xl text-base">
+            {busy ? "Saving…" : `Save ${extracted.length} reviewed question${extracted.length === 1 ? "" : "s"}`}
+          </Button>
+        </section>
+      )}
 
       <section className="surface-card space-y-3 p-5">
         <h2 className="text-xl font-bold">🗂️ Question bank ({questions?.length ?? 0})</h2>
