@@ -166,7 +166,10 @@ function Workspace() {
           question_text: res.question_text,
           marks: res.marks,
           image_url: null,
+          paper_type: null,
+          exam_year: null,
           schematic: res.schematic,
+
         });
         nextMarks = res.marks;
       } catch (e) {
