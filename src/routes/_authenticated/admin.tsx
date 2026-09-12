@@ -173,10 +173,49 @@ function Admin() {
         { toast.error(upErr.message); return; }
       }
       const board = subjects.find((s) => s.subject === subject)?.board ?? "";
+      const schemePayload = {
+        filePath: path,
+        mimeType: file.type,
+        subject,
+        board,
+        fileName: file.name,
+        paperType: paperType.trim() || undefined,
+        examYear: Number(examYear) || null,
+      };
+
+      async function saveScheme(): Promise<boolean> {
+        const scheme = await readMarkScheme({ data: schemePayload });
+        if (!scheme.detected) return false;
+        qc.invalidateQueries({ queryKey: ["mark-schemes"] });
+        toast.success(
+          `Marking scheme saved for ${subject}${scheme.paper_type ? ` · ${scheme.paper_type}` : ""}${scheme.exam_year ? ` · ${scheme.exam_year}` : ""}. The coach will mark against it.`,
+        );
+        return true;
+      }
+
       try {
-        const result = await extractQuestions({
-          data: { filePath: path, mimeType: file.type, subject, board },
-        });
+        // Marking schemes hold answers, not numbered questions — read them a different way.
+        if (MARK_SCHEME_NAME_PATTERN.test(file.name) && (await saveScheme())) {
+          setBusy(false);
+          setFile(null);
+          return;
+        }
+
+        let result;
+        try {
+          result = await extractQuestions({
+            data: { filePath: path, mimeType: file.type, subject, board },
+          });
+        } catch (questionError) {
+          // No printed questions: it may still be a marking scheme the filename did not flag.
+          if (await saveScheme()) {
+            setBusy(false);
+            setFile(null);
+            return;
+          }
+          throw questionError;
+        }
+
 
         // Cut every detected diagram out of its page and store it alongside the question.
         const diagramPages = result.questions.filter((q) => q.diagram_box).map((q) => q.page);
