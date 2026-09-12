@@ -372,6 +372,50 @@ function Workspace() {
           </SelectContent>
         </Select>
 
+        {mode !== "reinforce" && (
+          <div className="grid grid-cols-2 gap-3">
+            <Select value={paperFilter} onValueChange={setPaperFilter}>
+              <SelectTrigger className="tap-lg rounded-2xl border-2 text-base">
+                <SelectValue placeholder="Paper" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="py-3 text-base">
+                  All Papers
+                </SelectItem>
+                {paperOptions.map((p) => (
+                  <SelectItem key={p} value={p} className="py-3 text-base">
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={yearFilter} onValueChange={setYearFilter}>
+              <SelectTrigger className="tap-lg rounded-2xl border-2 text-base">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="py-3 text-base">
+                  All Years / Random
+                </SelectItem>
+                {yearOptions.map((y) => (
+                  <SelectItem key={y} value={String(y)} className="py-3 text-base">
+                    {y}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {mode !== "reinforce" && (
+          <p className="text-sm text-muted-foreground">
+            {filteredBank.length} question{filteredBank.length === 1 ? "" : "s"} ready in this
+            selection.
+          </p>
+        )}
+
+
         <Button onClick={loadNext} disabled={busy !== null} className="tap-lg w-full rounded-2xl text-base">
           {busy === "reinforce" ? "Building your drill…" : "Get a question"}
         </Button>
