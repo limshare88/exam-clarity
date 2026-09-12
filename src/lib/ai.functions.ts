@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { subjectStrategyRule } from "@/lib/subjects";
+import type { ExamSchematicData, SchematicKind } from "@/components/ExamSchematic";
 
 const MODEL = "google/gemini-3.8-flash";
 
@@ -335,15 +336,69 @@ export const generateReinforceQuestion = createServerFn({ method: "POST" })
       `${TONE} You write ONE fresh practice exam question in the style of ${data.board || "a major"} exam board for ${data.subject}.
 Target her known struggle patterns and reuse her stumble-block vocabulary naturally inside the question.
 The question must be answerable by describing a strategy (no long calculation required).
-Reply as JSON with keys: question_text, marks (integer 2-6), targeted (array of short strings saying what this drill practises).`,
+When a visual materially supports the question, include an exam schematic. Use only the diagram kinds allowed for the named subject:
+- Physics: force, circuit, wave, rays.
+- Chemistry: apparatus, bonding.
+- Biology: plant_cell, cell_division, organ.
+- Mathematics: function_graph, integration_area, trig_graph, geometry, circle_theorem.
+The renderer enforces crisp monochrome vectors on a clear background. Keep labels short, literal, widely readable, and essential only. Never request decorative images or colour. The kind value MUST be exactly one token from the subject's list above; do not invent synonyms such as free_body_diagram.
+For function_graph variant use quadratic, cubic, or exponential. For trig_graph use sin, cos, or tan. For apparatus use test_tube, beaker, or distillation. For other kinds use a short descriptive variant.
+Reply as JSON with keys: question_text, marks (integer 2-6), targeted (array of short strings), and schematic. schematic must be null when no diagram is needed, otherwise an object with exactly: kind, title, labels (0-4 short strings), variant, values (0-6 finite numbers). The question text must explicitly refer to the schematic when supplied.`,
       `Struggle patterns: ${tags.length ? tags.join(", ") : "none recorded yet, use general exam command-word practice"}
 Stumble-block vocabulary: ${vocab.length ? vocab.join(", ") : "none recorded yet"}`,
     );
+
+    const allowedBySubject: Record<string, SchematicKind[]> = {
+      mathematics: ["function_graph", "integration_area", "trig_graph", "geometry", "circle_theorem"],
+      physics: ["force", "circuit", "wave", "rays"],
+      chemistry: ["apparatus", "bonding"],
+      biology: ["plant_cell", "cell_division", "organ"],
+    };
+    const subjectKey = data.subject.toLowerCase();
+    const allowed = Object.entries(allowedBySubject).find(([key]) => subjectKey.includes(key))?.[1] ?? [];
+    const rawSchematic = out["schematic"];
+    let schematic: ExamSchematicData | null = null;
+    if (rawSchematic && typeof rawSchematic === "object") {
+      const value = rawSchematic as Record<string, unknown>;
+      const rawKind = String(value["kind"] ?? "").toLowerCase();
+      const kindAliases: Record<string, SchematicKind> = {
+        free_body_diagram: "force",
+        force_diagram: "force",
+        electrical_circuit: "circuit",
+        circuit_diagram: "circuit",
+        wave_cycle: "wave",
+        ray_diagram: "rays",
+        light_rays: "rays",
+        lab_apparatus: "apparatus",
+        distillation: "apparatus",
+        dot_and_cross: "bonding",
+        dot_cross: "bonding",
+        cell: "plant_cell",
+        mitosis: "cell_division",
+        organ_vector: "organ",
+        coordinate_curve: "function_graph",
+        graph: "function_graph",
+        area_under_curve: "integration_area",
+        trigonometry_graph: "trig_graph",
+        circle: "circle_theorem",
+      };
+      const kind = (kindAliases[rawKind] ?? rawKind) as SchematicKind;
+      if (allowed.includes(kind)) {
+        schematic = {
+          kind,
+          title: String(value["title"] ?? `${data.subject} exam schematic`).slice(0, 80),
+          labels: (Array.isArray(value["labels"]) ? value["labels"] : []).slice(0, 4).map((item) => String(item).slice(0, 24)),
+          variant: String(value["variant"] ?? "standard").slice(0, 30),
+          values: (Array.isArray(value["values"]) ? value["values"] : []).slice(0, 6).map(Number).filter(Number.isFinite),
+        };
+      }
+    }
 
     return {
       question_text: String(out["question_text"] ?? ""),
       marks: Number(out["marks"] ?? 3),
       targeted: (out["targeted"] ?? []) as string[],
+      schematic,
       based_on: { tags, vocab },
     };
   });

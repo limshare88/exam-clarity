@@ -9,6 +9,7 @@ import { VocabText } from "@/components/VocabText";
 import { coachStrategy, deconstructQuestion, generateReinforceQuestion } from "@/lib/ai.functions";
 import { subjectStrategyRule } from "@/lib/subjects";
 import { splitQuestionParts } from "@/lib/question-parts";
+import { ExamSchematic, type ExamSchematicData } from "@/components/ExamSchematic";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,6 +48,7 @@ type ActiveQuestion = {
   question_text: string;
   marks: number;
   image_url: string | null;
+  schematic: ExamSchematicData | null;
 };
 
 
@@ -161,6 +163,7 @@ function Workspace() {
           question_text: res.question_text,
           marks: res.marks,
           image_url: null,
+          schematic: res.schematic,
         });
         nextMarks = res.marks;
       } catch (e) {
@@ -188,6 +191,7 @@ function Workspace() {
         question_text: pick.question_text,
         marks: pick.marks,
         image_url: pick.image_url ?? null,
+        schematic: null,
       });
       nextMarks = pick.marks;
     }
@@ -471,6 +475,7 @@ function Workspace() {
                 </span>
               </a>
             )}
+            {active.schematic && <ExamSchematic diagram={active.schematic} subject={active.subject} />}
 
             {multiPart ? (
               <div className="space-y-6">
