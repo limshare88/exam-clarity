@@ -128,10 +128,11 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
       const questionNumber = String(item["question_number"] ?? "").trim();
       const questionText = String(item["question_text"] ?? "").trim();
       const marks = Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1));
-      // Must carry a real numbered marker, e.g. 1, Q2, 3(a), 4 (b)(ii)
-      if (!/^(q(uestion)?\s*)?\d+\s*(\(?[a-z]\)?)?\s*(\(?(i|ii|iii|iv|v|vi)\)?)?\s*[.)]?$/i.test(questionNumber)) return [];
-      if (questionText.length < 12) return [];
+      // Must carry a real numbered marker, e.g. 1, Q2, 3(a), 4 (b)(ii), 1.1, 5c(iv)
+      if (!/^(q(uestion)?[\s.:-]*)?\d+[\s.)\]:-]*([a-z0-9(). )\]-]*)$/i.test(questionNumber)) return [];
+      if (questionText.length < 8) return [];
       if (FLUFF.test(questionText)) return [];
+
 
       const page = Math.max(1, Math.round(Number(item["page"] ?? 1)) || 1);
       const rawBox = item["diagram_box"] as Record<string, unknown> | null | undefined;
@@ -153,7 +154,33 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
         },
       ];
     });
-    if (!questions.length) throw new Error("No numbered exam questions were found in this file.");
+    if (!questions.length) {
+      // The model saw questions but our marker check rejected every label: keep the
+      // genuine-looking ones rather than failing the whole upload.
+      const salvaged = candidates.flatMap((value, index): ExtractedExamQuestion[] => {
+        if (!value || typeof value !== "object") return [];
+        const item = value as Record<string, unknown>;
+        const questionText = String(item["question_text"] ?? "").trim();
+        if (questionText.length < 8 || FLUFF.test(questionText)) return [];
+        return [
+          {
+            question_number: String(item["question_number"] ?? "").trim() || String(index + 1),
+            question_text: questionText,
+            marks: Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1)),
+            page: Math.max(1, Math.round(Number(item["page"] ?? 1)) || 1),
+            has_diagram: false,
+            diagram_box: null,
+          },
+        ];
+      });
+      if (!salvaged.length) {
+        throw new Error(
+          "No numbered exam questions were found in this file. Check the pages contain printed question numbers and are not blurry.",
+        );
+      }
+      questions.push(...salvaged);
+    }
+
 
     const yearValue = Math.round(Number(out["exam_year"] ?? 0));
     return {
