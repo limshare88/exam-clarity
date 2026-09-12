@@ -256,8 +256,10 @@ function Workspace() {
     () => (active ? splitQuestionParts(active.question_text) : []),
     [active],
   );
-  const answerParts = useMemo(() => parts.filter((p) => p.label), [parts]);
+  // Only the deepest actionable questions get their own blueprint box.
+  const answerParts = useMemo(() => leafParts(parts), [parts]);
   const multiPart = answerParts.length > 1;
+
 
   const voiceNote =
     "Step 1: I read the command word and underline what it asks for. " +
