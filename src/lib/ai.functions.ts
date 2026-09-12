@@ -105,6 +105,8 @@ STEP 2 — DELETE FRONT MATTER. Completely discard, and never merge into any que
 
 STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number and keep each subpart's printed label, e.g. "(a) ... (b) ...", exactly where it appears so the text can be broken into blocks later. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
 
+MULTIPLE CHOICE. When a question offers answer options (A, B, C, D, tick boxes, bubbles or "which of the following"), it is ONE question, never several. Keep the stem and every option inside a single question_text, each option on its own line written as "A. ...", "B. ...". Never turn options into separate questions and never relabel them as sub-parts.
+
 STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
 
 STEP 5 — DIAGRAMS. Decide whether the question has its own diagram, chart, graph, table image, circuit, map or structural illustration printed with it. Set has_diagram true only then. When true, set diagram_box to the tight rectangle around that visual as fractions of the full page: {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner. Exclude surrounding body text from the box. When there is no visual, set has_diagram false and diagram_box null.
@@ -396,6 +398,7 @@ export const coachStrategy = createServerFn({ method: "POST" })
       board: string;
       strategy: string;
       marks: number;
+      questionId?: string | null;
       paperType?: string | null;
       examYear?: number | null | undefined;
       questionNumber?: string | null;
@@ -406,32 +409,64 @@ export const coachStrategy = createServerFn({ method: "POST" })
     const parts = (data.parts ?? []).filter((p) => p.question_text.trim().length > 0);
     const multi = parts.length > 1;
 
-    // Pull the official marking scheme saved for this exact subject / paper / year, when one exists.
+    // STEP 1 — read the saved question row so the paper identity comes from the bank,
+    // not only from what the screen passed in.
+    let subject = data.subject;
+    let board = data.board;
+    let paperType = data.paperType ?? null;
+    let examYear = data.examYear ?? null;
+    let questionNumber = (data.questionNumber ?? "").trim();
+    if (data.questionId) {
+      const { data: row } = await context.supabase
+        .from("exam_questions")
+        .select("subject, board, paper_type, exam_year, metadata")
+        .eq("id", data.questionId)
+        .eq("user_id", context.userId)
+        .maybeSingle();
+      if (row) {
+        subject = row.subject || subject;
+        board = row.board || board;
+        paperType = row.paper_type ?? paperType;
+        examYear = row.exam_year ?? examYear;
+        const meta = (row.metadata ?? {}) as Record<string, unknown>;
+        questionNumber = String(meta["question_number"] ?? questionNumber).trim();
+      }
+    }
+
+    // STEP 2 — find the marking scheme linked to this exact subject / paper / year.
+    // Fall back to the same subject's scheme only when no exact paper match exists.
     let schemeBrief = "";
     {
-      let query = context.supabase
+      const { data: schemes } = await context.supabase
         .from("mark_schemes")
         .select("scheme_text, entries, paper_type, exam_year, original_name")
         .eq("user_id", context.userId)
-        .eq("subject", data.subject)
-        .limit(1);
-      if (data.paperType) query = query.eq("paper_type", data.paperType);
-      if (data.examYear) query = query.eq("exam_year", data.examYear);
-      const { data: schemes } = await query;
-      const scheme = schemes?.[0];
+        .eq("subject", subject)
+        .order("updated_at", { ascending: false })
+        .limit(25);
+
+      const list = schemes ?? [];
+      const scheme =
+        list.find((s) => (!paperType || s.paper_type === paperType) && (!examYear || s.exam_year === examYear)) ??
+        list.find((s) => (paperType && s.paper_type === paperType) || (examYear && s.exam_year === examYear)) ??
+        list[0];
+
       if (scheme) {
         const entries = (Array.isArray(scheme.entries) ? scheme.entries : []) as MarkSchemeEntry[];
-        const number = (data.questionNumber ?? "").trim().toLowerCase();
-        const relevant = number
-          ? entries.filter((entry) => String(entry.question_number ?? "").toLowerCase().startsWith(number.split(/[^a-z0-9]/)[0] ?? number))
-          : entries;
-        const lines = (relevant.length ? relevant : entries)
-          .slice(0, 20)
+        const stem = (questionNumber.match(/\d+/)?.[0] ?? "").toLowerCase();
+        const relevant = stem
+          ? entries.filter((entry) => (String(entry.question_number ?? "").match(/\d+/)?.[0] ?? "") === stem)
+          : [];
+        const chosen = relevant.length ? relevant : entries;
+        const lines = chosen
+          .slice(0, 24)
           .map((entry) => `${entry.question_number} (${entry.marks} marks): ${entry.answer_points.join(" | ")}`)
           .join("\n");
-        schemeBrief = `\n\nOFFICIAL MARKING SCHEME for this paper (${scheme.original_name ?? "uploaded scheme"}${scheme.paper_type ? `, ${scheme.paper_type}` : ""}${scheme.exam_year ? `, ${scheme.exam_year}` : ""}):\n${lines || String(scheme.scheme_text ?? "").slice(0, 4000)}`;
+        const exact = (!paperType || scheme.paper_type === paperType) && (!examYear || scheme.exam_year === examYear);
+        schemeBrief = `\n\nOFFICIAL MARKING SCHEME${exact ? " for this exact paper" : " for this subject (closest match)"} (${scheme.original_name ?? "uploaded scheme"}${scheme.paper_type ? `, ${scheme.paper_type}` : ""}${scheme.exam_year ? `, ${scheme.exam_year}` : ""})${relevant.length ? ` — marking points for question ${questionNumber}` : ""}:\n${lines || String(scheme.scheme_text ?? "").slice(0, 4000)}`;
       }
     }
+
 
     const partsBrief = multi
       ? parts
@@ -443,14 +478,20 @@ export const coachStrategy = createServerFn({ method: "POST" })
       : `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`;
 
     const out = await callAI(
-      `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${data.board || "the selected exam board"} for ${data.subject}.
+      `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${board || "the selected exam board"} for ${subject}.
 Treat the named board as binding. Do not blend in conventions from another board. Interpret command words exactly as that board does. Allocate credit in proportion to this question's ${data.marks} available marks, including method, accuracy, independent, consequential, or equivalent marks where that board uses them.
 You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether the correct formulas, rules or techniques were named.
-SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(data.subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
+SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
 You completely ignore missing numerical working, missing final answers, missing paragraph descriptions, missing raw data calculations, missing essays, missing text transformations, spelling and grammar. Never ask for calculations.
 ${
   schemeBrief
-    ? "The official marking scheme for this exact paper is supplied below. Mark strictly against it: credit strategy steps that would earn its listed marking points, and name the marking points she missed."
+    ? `MANDATORY MARK SCHEME CALIBRATION. The official uploaded marking scheme for this paper is supplied at the end of the user message. It overrides your own expectations.
+Before scoring, list to yourself the explicit marking points, threshold expectations and approved keywords it gives for this question. Then:
+- Credit a strategy step only when it would genuinely reach one of those marking points.
+- Score in proportion to how many of the scheme's marking points her plan would secure out of ${data.marks}.
+- In formula_feedback name the exact rules, formulas or approved keywords the scheme requires.
+- In missing_steps name the specific scheme marking points her plan would miss, in the scheme's own wording, simplified into short calm phrases.
+Never contradict the scheme and never invent marking points it does not contain.`
     : "Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively."
 }
 
@@ -490,7 +531,7 @@ Reply as JSON with keys: part_feedback (array, one object per sub-question in th
 
     return {
       score: averaged,
-      board_used: String(out["board_used"] ?? data.board),
+      board_used: String(out["board_used"] ?? board),
       rubric_basis: String(out["rubric_basis"] ?? `${data.board} command-word and method-mark conventions.`),
       logic_feedback: String(out["logic_feedback"] ?? ""),
       sequencing_feedback: String(out["sequencing_feedback"] ?? ""),

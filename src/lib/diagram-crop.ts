@@ -32,7 +32,8 @@ export async function renderPaperPages(
   for (const pageNumber of wanted) {
     if (pageNumber > doc.numPages) continue;
     const page = await doc.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 2 });
+    // High render scale so the cropped diagram stays pixel-sharp when enlarged.
+    const viewport = page.getViewport({ scale: 3.5 });
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(viewport.width);
     canvas.height = Math.ceil(viewport.height);
