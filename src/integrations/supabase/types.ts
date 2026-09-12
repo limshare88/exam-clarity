@@ -14,7 +14,218 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      exam_questions: {
+        Row: {
+          board: string | null
+          created_at: string
+          file_path: string | null
+          id: string
+          marks: number
+          metadata: Json
+          question_text: string
+          source_type: string
+          subject: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          board?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          marks?: number
+          metadata?: Json
+          question_text: string
+          source_type?: string
+          subject: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          board?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          marks?: number
+          metadata?: Json
+          question_text?: string
+          source_type?: string
+          subject?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      gamification_inventory: {
+        Row: {
+          category: string
+          created_at: string
+          equipped: boolean
+          id: string
+          item_id: string
+          item_name: string
+          price: number
+          user_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          equipped?: boolean
+          id?: string
+          item_id: string
+          item_name: string
+          price?: number
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          equipped?: boolean
+          id?: string
+          item_id?: string
+          item_name?: string
+          price?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      session_logs: {
+        Row: {
+          ai_feedback: Json
+          created_at: string
+          id: string
+          marks: number
+          mode: string
+          question_id: string | null
+          score: number | null
+          strategy_text: string | null
+          struggle_tags: string[]
+          subject: string | null
+          time_seconds: number
+          user_id: string
+        }
+        Insert: {
+          ai_feedback?: Json
+          created_at?: string
+          id?: string
+          marks?: number
+          mode?: string
+          question_id?: string | null
+          score?: number | null
+          strategy_text?: string | null
+          struggle_tags?: string[]
+          subject?: string | null
+          time_seconds?: number
+          user_id: string
+        }
+        Update: {
+          ai_feedback?: Json
+          created_at?: string
+          id?: string
+          marks?: number
+          mode?: string
+          question_id?: string | null
+          score?: number | null
+          strategy_text?: string | null
+          struggle_tags?: string[]
+          subject?: string | null
+          time_seconds?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_logs_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "exam_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_profiles: {
+        Row: {
+          age: number | null
+          coins: number
+          created_at: string
+          id: string
+          learning_profile: string[]
+          name: string
+          onboarded: boolean
+          stars: number
+          subjects: Json
+          timer_seconds: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          age?: number | null
+          coins?: number
+          created_at?: string
+          id?: string
+          learning_profile?: string[]
+          name?: string
+          onboarded?: boolean
+          stars?: number
+          subjects?: Json
+          timer_seconds?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          age?: number | null
+          coins?: number
+          created_at?: string
+          id?: string
+          learning_profile?: string[]
+          name?: string
+          onboarded?: boolean
+          stars?: number
+          subjects?: Json
+          timer_seconds?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      vocab_stumble_blocks: {
+        Row: {
+          click_count: number
+          created_at: string
+          definition: string | null
+          everyday_example: string | null
+          id: string
+          mastered: boolean
+          subject: string
+          subject_context: string | null
+          user_id: string
+          word: string
+        }
+        Insert: {
+          click_count?: number
+          created_at?: string
+          definition?: string | null
+          everyday_example?: string | null
+          id?: string
+          mastered?: boolean
+          subject?: string
+          subject_context?: string | null
+          user_id: string
+          word: string
+        }
+        Update: {
+          click_count?: number
+          created_at?: string
+          definition?: string | null
+          everyday_example?: string | null
+          id?: string
+          mastered?: boolean
+          subject?: string
+          subject_context?: string | null
+          user_id?: string
+          word?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
