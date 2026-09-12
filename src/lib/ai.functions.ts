@@ -396,12 +396,42 @@ export const coachStrategy = createServerFn({ method: "POST" })
       board: string;
       strategy: string;
       marks: number;
+      paperType?: string | null;
+      examYear?: number | null;
+      questionNumber?: string | null;
       parts?: { label: string; question_text: string; strategy: string }[];
     }) => input,
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const parts = (data.parts ?? []).filter((p) => p.question_text.trim().length > 0);
     const multi = parts.length > 1;
+
+    // Pull the official marking scheme saved for this exact subject / paper / year, when one exists.
+    let schemeBrief = "";
+    {
+      let query = context.supabase
+        .from("mark_schemes")
+        .select("scheme_text, entries, paper_type, exam_year, original_name")
+        .eq("user_id", context.userId)
+        .eq("subject", data.subject)
+        .limit(1);
+      if (data.paperType) query = query.eq("paper_type", data.paperType);
+      if (data.examYear) query = query.eq("exam_year", data.examYear);
+      const { data: schemes } = await query;
+      const scheme = schemes?.[0];
+      if (scheme) {
+        const entries = (Array.isArray(scheme.entries) ? scheme.entries : []) as MarkSchemeEntry[];
+        const number = (data.questionNumber ?? "").trim().toLowerCase();
+        const relevant = number
+          ? entries.filter((entry) => String(entry.question_number ?? "").toLowerCase().startsWith(number.split(/[^a-z0-9]/)[0] ?? number))
+          : entries;
+        const lines = (relevant.length ? relevant : entries)
+          .slice(0, 20)
+          .map((entry) => `${entry.question_number} (${entry.marks} marks): ${entry.answer_points.join(" | ")}`)
+          .join("\n");
+        schemeBrief = `\n\nOFFICIAL MARKING SCHEME for this paper (${scheme.original_name ?? "uploaded scheme"}${scheme.paper_type ? `, ${scheme.paper_type}` : ""}${scheme.exam_year ? `, ${scheme.exam_year}` : ""}):\n${lines || String(scheme.scheme_text ?? "").slice(0, 4000)}`;
+      }
+    }
 
     const partsBrief = multi
       ? parts
@@ -418,7 +448,12 @@ Treat the named board as binding. Do not blend in conventions from another board
 You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether the correct formulas, rules or techniques were named.
 SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(data.subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
 You completely ignore missing numerical working, missing final answers, missing paragraph descriptions, missing raw data calculations, missing essays, missing text transformations, spelling and grammar. Never ask for calculations.
-Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively.
+${
+  schemeBrief
+    ? "The official marking scheme for this exact paper is supplied below. Mark strictly against it: credit strategy steps that would earn its listed marking points, and name the marking points she missed."
+    : "Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively."
+}
+
 ${
   multi
     ? `This question has ${parts.length} separate sub-questions and she wrote a separate blueprint for each. Grade EVERY sub-question independently on its own merits: never let one part's quality change another part's judgement, and never merge them. A blank part scores 0 with a calm prompt about what its first step should have been.
