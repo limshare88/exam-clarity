@@ -515,6 +515,43 @@ function Admin() {
         {!papers?.length && <p className="text-muted-foreground">No papers uploaded yet.</p>}
       </section>
 
+      <section className="surface-card space-y-3 p-5">
+        <div>
+          <h2 className="text-xl font-bold">✅ Marking schemes ({schemes?.length ?? 0})</h2>
+          <p className="text-sm text-muted-foreground">
+            Upload a mark scheme file and it is linked to the matching subject, paper and year, then used when
+            marking her strategies.
+          </p>
+        </div>
+        {(schemes ?? []).map((scheme) => (
+          <div
+            key={scheme.id}
+            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-border bg-cream p-4"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-semibold">{scheme.original_name ?? "Marking scheme"}</p>
+              <p className="text-sm text-muted-foreground">
+                {scheme.subject}
+                {scheme.paper_type ? ` · ${scheme.paper_type}` : ""}
+                {scheme.exam_year ? ` · ${scheme.exam_year}` : ""} ·{" "}
+                {(Array.isArray(scheme.entries) ? scheme.entries.length : 0)} marking entries
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => deleteScheme(scheme.id, scheme.file_path)}
+              className="tap-lg shrink-0 rounded-2xl border-2 border-border text-sm"
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              Delete
+            </Button>
+          </div>
+        ))}
+        {!schemes?.length && <p className="text-muted-foreground">No marking schemes uploaded yet.</p>}
+      </section>
+
+
+
       <Dialog open={duplicateName !== null} onOpenChange={(o) => !o && setDuplicateName(null)}>
         <DialogContent className="rounded-3xl border-2 border-border">
           <DialogHeader>
