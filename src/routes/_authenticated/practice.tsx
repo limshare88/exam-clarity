@@ -48,7 +48,10 @@ type ActiveQuestion = {
   question_text: string;
   marks: number;
   image_url: string | null;
+  paper_type: string | null;
+  exam_year: number | null;
   schematic: ExamSchematicData | null;
+
 };
 
 
