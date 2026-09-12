@@ -341,7 +341,7 @@ When a visual materially supports the question, include an exam schematic. Use o
 - Chemistry: apparatus, bonding.
 - Biology: plant_cell, cell_division, organ.
 - Mathematics: function_graph, integration_area, trig_graph, geometry, circle_theorem.
-The renderer enforces crisp monochrome vectors on a clear background. Keep labels short, literal, widely readable, and essential only. Never request decorative images or colour.
+The renderer enforces crisp monochrome vectors on a clear background. Keep labels short, literal, widely readable, and essential only. Never request decorative images or colour. The kind value MUST be exactly one token from the subject's list above; do not invent synonyms such as free_body_diagram.
 For function_graph variant use quadratic, cubic, or exponential. For trig_graph use sin, cos, or tan. For apparatus use test_tube, beaker, or distillation. For other kinds use a short descriptive variant.
 Reply as JSON with keys: question_text, marks (integer 2-6), targeted (array of short strings), and schematic. schematic must be null when no diagram is needed, otherwise an object with exactly: kind, title, labels (0-4 short strings), variant, values (0-6 finite numbers). The question text must explicitly refer to the schematic when supplied.`,
       `Struggle patterns: ${tags.length ? tags.join(", ") : "none recorded yet, use general exam command-word practice"}
