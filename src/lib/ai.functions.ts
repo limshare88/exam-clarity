@@ -128,10 +128,11 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
       const questionNumber = String(item["question_number"] ?? "").trim();
       const questionText = String(item["question_text"] ?? "").trim();
       const marks = Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1));
-      // Must carry a real numbered marker, e.g. 1, Q2, 3(a), 4 (b)(ii)
-      if (!/^(q(uestion)?\s*)?\d+\s*(\(?[a-z]\)?)?\s*(\(?(i|ii|iii|iv|v|vi)\)?)?\s*[.)]?$/i.test(questionNumber)) return [];
-      if (questionText.length < 12) return [];
+      // Must carry a real numbered marker, e.g. 1, Q2, 3(a), 4 (b)(ii), 1.1, 5c(iv)
+      if (!/^(q(uestion)?[\s.:-]*)?\d+[\s.)\]:-]*([a-z0-9(). )\]-]*)$/i.test(questionNumber)) return [];
+      if (questionText.length < 8) return [];
       if (FLUFF.test(questionText)) return [];
+
 
       const page = Math.max(1, Math.round(Number(item["page"] ?? 1)) || 1);
       const rawBox = item["diagram_box"] as Record<string, unknown> | null | undefined;
