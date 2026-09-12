@@ -3,25 +3,48 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const MODEL = "google/gemini-3.8-flash";
 
-async function callAI(system: string, user: string): Promise<Record<string, unknown>> {
+type MediaInput = { mimeType: string; data: string };
+
+async function callAI(
+  system: string,
+  user: string,
+  media?: MediaInput,
+): Promise<Record<string, unknown>> {
   const key = process.env["LOVABLE_API_KEY"];
   if (!key) throw new Error("AI is not configured yet.");
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Lovable-API-Key": key,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
-  });
+  const content = media
+    ? [
+        { type: "text", text: user },
+        ...(media.mimeType === "application/pdf"
+          ? [{ type: "file", file: { filename: "exam-paper.pdf", file_data: `data:${media.mimeType};base64,${media.data}` } }]
+          : [{ type: "image_url", image_url: { url: `data:${media.mimeType};base64,${media.data}` } }]),
+      ]
+    : user;
+
+  let res: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Lovable-API-Key": key,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content },
+        ],
+      }),
+    });
+    if (res.ok || (res.status !== 429 && res.status < 500)) break;
+    const retryAfter = Number(res.headers.get("Retry-After") ?? 0);
+    await new Promise((resolve) => setTimeout(resolve, Math.max(retryAfter * 1000, 800 * 2 ** attempt)));
+  }
+
+  if (!res) throw new Error("The AI helper could not start.");
 
   if (!res.ok) {
     const text = await res.text();
@@ -41,6 +64,57 @@ async function callAI(system: string, user: string): Promise<Record<string, unkn
 
 const TONE =
   "You support a teenage student with dyslexia and autism. Use short, calm, literal sentences. No idioms, no sarcasm, no long paragraphs, no emoji spam.";
+
+export type ExtractedExamQuestion = {
+  question_number: string;
+  question_text: string;
+  marks: number;
+};
+
+export const extractExamQuestions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { filePath: string; mimeType: string; subject: string; board: string }) => input)
+  .handler(async ({ data, context }) => {
+    if (!data.filePath.startsWith(`${context.userId}/`)) throw new Error("This upload does not belong to your account.");
+    if (data.mimeType !== "application/pdf" && !data.mimeType.startsWith("image/")) {
+      throw new Error("Upload a PDF or image file.");
+    }
+
+    const { data: file, error } = await context.supabase.storage.from("exam-uploads").download(data.filePath);
+    if (error || !file) throw new Error(error?.message ?? "The uploaded file could not be read.");
+    if (file.size === 0) throw new Error("The uploaded file is empty.");
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 32768) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+    }
+
+    const out = await callAI(
+      `You are a strict exam-paper extraction engine for ${data.board || "the selected exam board"} ${data.subject} papers.
+Return JSON with one key, questions, containing an array of objects with exactly: question_number, question_text, marks.
+Extract only genuine numbered or clearly labelled assessable questions and their necessary subparts. Combine subparts under their main numbered question unless the paper gives separate total marks and each can stand alone.
+Remove cover pages, candidate instructions, formula-book notices, generic test directions, regulations, contents, page numbers, running headers/footers, blank-page notices, examiner-only text, copyright and publisher lines.
+Preserve formulas, units, values, command words, answer choices, and diagram/table references needed to answer. Do not invent text hidden or missing from the file.
+Read each printed mark allocation such as [4 marks], (3), [Total: 6], or '4 marks'. Store the total integer marks for that extracted question. If subpart marks are printed, sum them. If no reliable mark value is visible, use 1 and set that question's question_text unchanged.
+Do not return examples, section introductions, or general instructions. Return an empty questions array when no genuine exam questions are visible.`,
+      `Extract the core numbered questions from this ${data.subject} paper for ${data.board}. Output valid JSON only.`,
+      { mimeType: data.mimeType, data: btoa(binary) },
+    );
+
+    const candidates = Array.isArray(out["questions"]) ? out["questions"] : [];
+    const questions = candidates.flatMap((value): ExtractedExamQuestion[] => {
+      if (!value || typeof value !== "object") return [];
+      const item = value as Record<string, unknown>;
+      const questionNumber = String(item["question_number"] ?? "").trim();
+      const questionText = String(item["question_text"] ?? "").trim();
+      const marks = Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1));
+      if (!questionNumber || questionText.length < 8) return [];
+      return [{ question_number: questionNumber, question_text: questionText, marks }];
+    });
+    if (!questions.length) throw new Error("No numbered exam questions were found in this file.");
+    return { questions };
+  });
 
 export const deconstructQuestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -109,14 +183,18 @@ export const coachStrategy = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const out = await callAI(
-      `${TONE} You are a Formula-Focused Coach marking against ${data.board || "the relevant"} exam board rubrics for ${data.subject}.
+      `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${data.board || "the selected exam board"} for ${data.subject}.
+Treat the named board as binding. Do not blend in conventions from another board. Interpret command words exactly as that board does. Allocate credit in proportion to this question's ${data.marks} available marks, including method, accuracy, independent, consequential, or equivalent marks where that board uses them.
 You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether the correct formulas, rules or techniques were named.
 You completely ignore missing numerical working, missing final answers, missing essays, spelling and grammar. Never ask for calculations.
-Reply as JSON with keys: score (0-100 integer for strategy quality), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`,
+Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively.
+Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`,
       `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`,
     );
     return {
       score: Number(out["score"] ?? 0),
+      board_used: String(out["board_used"] ?? data.board),
+      rubric_basis: String(out["rubric_basis"] ?? `${data.board} command-word and method-mark conventions.`),
       logic_feedback: String(out["logic_feedback"] ?? ""),
       sequencing_feedback: String(out["sequencing_feedback"] ?? ""),
       formula_feedback: String(out["formula_feedback"] ?? ""),
