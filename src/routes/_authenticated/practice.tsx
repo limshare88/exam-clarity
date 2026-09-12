@@ -540,41 +540,78 @@ function Workspace() {
             </section>
           )}
 
-          <section className="surface-card space-y-4 p-5">
+          <section className="surface-card space-y-5 p-5">
             <div className="rounded-2xl border-2 border-border bg-peach p-4">
               <p className="reading-text text-base font-semibold">
                 📝 Goal: State your strategy step-by-step and name the formulas or rules you will
                 use. {subjectStrategyRule(active?.subject ?? subject)}
               </p>
+              {multiPart && (
+                <p className="reading-text mt-2 text-base">
+                  This question has {answerParts.length} parts. Fill in one blueprint box per part.
+                </p>
+              )}
             </div>
 
-            <Textarea
-              rows={7}
-              value={strategy}
-              onChange={(e) => setStrategy(e.target.value)}
-              placeholder="Step 1… Step 2… The formula I would use is…"
-              className="reading-text rounded-2xl border-2 text-base"
-            />
+            {multiPart ? (
+              answerParts.map((part) => (
+                <div key={part.label} className="space-y-3 rounded-2xl border-2 border-border bg-cream p-4">
+                  <p className="text-lg font-bold text-primary">{part.label}</p>
+                  <p className="reading-text text-sm text-muted-foreground">{part.text}</p>
+                  <Textarea
+                    rows={5}
+                    value={partStrategies[part.label] ?? ""}
+                    onChange={(e) =>
+                      setPartStrategies((prev) => ({ ...prev, [part.label]: e.target.value }))
+                    }
+                    placeholder={`Blueprint for ${part.label}: Step 1… Step 2… The formula I would use is…`}
+                    className="reading-text rounded-2xl border-2 bg-card text-base"
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={() => toggleMic(part.label)}
+                    className={`tap-lg w-full rounded-2xl border-2 border-border text-base ${
+                      recording === part.label ? "bg-destructive text-destructive-foreground" : ""
+                    }`}
+                  >
+                    {recording === part.label ? (
+                      <Square className="mr-2 h-5 w-5" />
+                    ) : (
+                      <Mic className="mr-2 h-5 w-5" />
+                    )}
+                    {recording === part.label ? "Listening…" : `Speak ${part.label}`}
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <>
+                <Textarea
+                  rows={7}
+                  value={strategy}
+                  onChange={(e) => setStrategy(e.target.value)}
+                  placeholder="Step 1… Step 2… The formula I would use is…"
+                  className="reading-text rounded-2xl border-2 text-base"
+                />
+                <Button
+                  variant="secondary"
+                  onClick={() => toggleMic("__single")}
+                  className={`tap-lg w-full rounded-2xl border-2 border-border text-base ${
+                    recording ? "bg-destructive text-destructive-foreground" : ""
+                  }`}
+                >
+                  {recording ? <Square className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}
+                  {recording ? "Listening…" : "Speak it"}
+                </Button>
+              </>
+            )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="secondary"
-                onClick={toggleMic}
-                className={`tap-lg rounded-2xl border-2 border-border text-base ${
-                  recording ? "bg-destructive text-destructive-foreground" : ""
-                }`}
-              >
-                {recording ? <Square className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}
-                {recording ? "Listening…" : "Speak it"}
-              </Button>
-              <Button
-                onClick={submitStrategy}
-                disabled={busy === "coach"}
-                className="tap-lg rounded-2xl text-base"
-              >
-                {busy === "coach" ? "Checking…" : "Check my thinking"}
-              </Button>
-            </div>
+            <Button
+              onClick={submitStrategy}
+              disabled={busy === "coach"}
+              className="tap-lg w-full rounded-2xl text-base"
+            >
+              {busy === "coach" ? "Checking…" : "Check my thinking"}
+            </Button>
           </section>
 
           {feedback && (
@@ -585,25 +622,60 @@ function Workspace() {
                   {feedback.score}%
                 </span>
               </div>
-              <FeedbackBlock title="🧠 Logic" body={feedback.logic_feedback} />
-              <FeedbackBlock title="🔢 Sequencing" body={feedback.sequencing_feedback} />
-              <FeedbackBlock title="📐 Formulas & rules" body={feedback.formula_feedback} />
+
+              {feedback.part_feedback?.length ? (
+                feedback.part_feedback.map((part, index) => (
+                  <div
+                    key={`${part.label}-${index}`}
+                    className="space-y-3 rounded-3xl border-2 border-border bg-cream p-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-lg font-bold text-primary">{part.label || "This question"}</p>
+                      <span className="rounded-2xl border-2 border-border bg-mint px-3 py-1 font-bold">
+                        {part.score}%
+                      </span>
+                    </div>
+                    <FeedbackBlock title="🧠 Logic" body={part.logic_feedback} />
+                    <FeedbackBlock title="🔢 Sequencing" body={part.sequencing_feedback} />
+                    <FeedbackBlock title="📐 Formulas & rules" body={part.formula_feedback} />
+                    {part.missing_steps?.length > 0 && (
+                      <div className="rounded-2xl border-2 border-border bg-card p-4">
+                        <p className="font-bold">➕ Steps to add next time</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5">
+                          {part.missing_steps.map((s, i) => (
+                            <li key={i} className="reading-text text-base">
+                              {s}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <>
+                  <FeedbackBlock title="🧠 Logic" body={feedback.logic_feedback} />
+                  <FeedbackBlock title="🔢 Sequencing" body={feedback.sequencing_feedback} />
+                  <FeedbackBlock title="📐 Formulas & rules" body={feedback.formula_feedback} />
+                  {feedback.missing_steps?.length > 0 && (
+                    <div className="rounded-2xl border-2 border-border bg-cream p-4">
+                      <p className="font-bold">➕ Steps to add next time</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-5">
+                        {feedback.missing_steps.map((s, i) => (
+                          <li key={i} className="reading-text text-base">
+                            {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+
               <div className="rounded-2xl border-2 border-border bg-lavender p-4">
                 <p className="font-bold">{feedback.board_used} standard</p>
                 <p className="reading-text mt-1 text-sm">{feedback.rubric_basis}</p>
               </div>
-              {feedback.missing_steps?.length > 0 && (
-                <div className="rounded-2xl border-2 border-border bg-cream p-4">
-                  <p className="font-bold">➕ Steps to add next time</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    {feedback.missing_steps.map((s, i) => (
-                      <li key={i} className="reading-text text-base">
-                        {s}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
               <p className="reading-text rounded-2xl border-2 border-border bg-mint p-4 text-base">
                 💚 {feedback.encouragement}
               </p>
@@ -612,6 +684,7 @@ function Workspace() {
               </Button>
             </section>
           )}
+
         </>
       )}
     </AppShell>
