@@ -27,7 +27,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { extractExamQuestions } from "@/lib/ai.functions";
+import { extractExamQuestions, extractMarkScheme, MARK_SCHEME_NAME_PATTERN } from "@/lib/ai.functions";
 import { cropAndUploadDiagram, renderPaperPages } from "@/lib/diagram-crop";
 import { FileSearch, Trash2 } from "lucide-react";
 
@@ -70,6 +70,8 @@ function Admin() {
   const [busy, setBusy] = useState(false);
   const [duplicateName, setDuplicateName] = useState<string | null>(null);
   const extractQuestions = useServerFn(extractExamQuestions);
+  const readMarkScheme = useServerFn(extractMarkScheme);
+
 
 
   const [timeframe, setTimeframe] = useState<"all" | "month" | "custom">("all");
@@ -131,6 +133,26 @@ function Admin() {
     },
   });
 
+  const { data: schemes } = useQuery({
+    queryKey: ["mark-schemes"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("mark_schemes")
+        .select("id, subject, paper_type, exam_year, original_name, entries, file_path")
+        .order("created_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  async function deleteScheme(id: string, filePath: string | null) {
+    const { error } = await supabase.from("mark_schemes").delete().eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    if (filePath) await supabase.storage.from("exam-uploads").remove([filePath]);
+    qc.invalidateQueries({ queryKey: ["mark-schemes"] });
+    toast.success("Marking scheme removed.");
+  }
+
+
   async function deletePaper(paper: Paper) {
     const { error } = await supabase.from("exam_questions").delete().eq("file_path", paper.file_path);
     if (error) { toast.error(error.message); return; }
@@ -171,10 +193,49 @@ function Admin() {
         { toast.error(upErr.message); return; }
       }
       const board = subjects.find((s) => s.subject === subject)?.board ?? "";
+      const schemePayload = {
+        filePath: path,
+        mimeType: file.type,
+        subject,
+        board,
+        fileName: file.name,
+        paperType: paperType.trim() || undefined,
+        examYear: Number(examYear) || null,
+      };
+
+      async function saveScheme(): Promise<boolean> {
+        const scheme = await readMarkScheme({ data: schemePayload });
+        if (!scheme.detected) return false;
+        qc.invalidateQueries({ queryKey: ["mark-schemes"] });
+        toast.success(
+          `Marking scheme saved for ${subject}${scheme.paper_type ? ` · ${scheme.paper_type}` : ""}${scheme.exam_year ? ` · ${scheme.exam_year}` : ""}. The coach will mark against it.`,
+        );
+        return true;
+      }
+
       try {
-        const result = await extractQuestions({
-          data: { filePath: path, mimeType: file.type, subject, board },
-        });
+        // Marking schemes hold answers, not numbered questions — read them a different way.
+        if (MARK_SCHEME_NAME_PATTERN.test(file.name) && (await saveScheme())) {
+          setBusy(false);
+          setFile(null);
+          return;
+        }
+
+        let result;
+        try {
+          result = await extractQuestions({
+            data: { filePath: path, mimeType: file.type, subject, board },
+          });
+        } catch (questionError) {
+          // No printed questions: it may still be a marking scheme the filename did not flag.
+          if (await saveScheme()) {
+            setBusy(false);
+            setFile(null);
+            return;
+          }
+          throw questionError;
+        }
+
 
         // Cut every detected diagram out of its page and store it alongside the question.
         const diagramPages = result.questions.filter((q) => q.diagram_box).map((q) => q.page);
@@ -453,6 +514,43 @@ function Admin() {
         ))}
         {!papers?.length && <p className="text-muted-foreground">No papers uploaded yet.</p>}
       </section>
+
+      <section className="surface-card space-y-3 p-5">
+        <div>
+          <h2 className="text-xl font-bold">✅ Marking schemes ({schemes?.length ?? 0})</h2>
+          <p className="text-sm text-muted-foreground">
+            Upload a mark scheme file and it is linked to the matching subject, paper and year, then used when
+            marking her strategies.
+          </p>
+        </div>
+        {(schemes ?? []).map((scheme) => (
+          <div
+            key={scheme.id}
+            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-border bg-cream p-4"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-semibold">{scheme.original_name ?? "Marking scheme"}</p>
+              <p className="text-sm text-muted-foreground">
+                {scheme.subject}
+                {scheme.paper_type ? ` · ${scheme.paper_type}` : ""}
+                {scheme.exam_year ? ` · ${scheme.exam_year}` : ""} ·{" "}
+                {(Array.isArray(scheme.entries) ? scheme.entries.length : 0)} marking entries
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => deleteScheme(scheme.id, scheme.file_path)}
+              className="tap-lg shrink-0 rounded-2xl border-2 border-border text-sm"
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              Delete
+            </Button>
+          </div>
+        ))}
+        {!schemes?.length && <p className="text-muted-foreground">No marking schemes uploaded yet.</p>}
+      </section>
+
+
 
       <Dialog open={duplicateName !== null} onOpenChange={(o) => !o && setDuplicateName(null)}>
         <DialogContent className="rounded-3xl border-2 border-border">

@@ -190,6 +190,138 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
     };
   });
 
+export const MARK_SCHEME_NAME_PATTERN =
+  /(mark[\s_-]*scheme|marking[\s_-]*scheme|marking[\s_-]*criteria|markscheme|\bms\b|_ms[._-]|answer[\s_-]*key|examiner[\s_-]*report)/i;
+
+export type MarkSchemeEntry = { question_number: string; answer_points: string[]; marks: number };
+
+/** Reads an official marking scheme and links it to one subject, paper and year. */
+export const extractMarkScheme = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      filePath: string;
+      mimeType: string;
+      subject: string;
+      board: string;
+      fileName: string;
+      paperType?: string | undefined;
+      examYear?: number | null | undefined;
+    }) => input,
+  )
+  .handler(async ({ data, context }) => {
+    if (!data.filePath.startsWith(`${context.userId}/`)) throw new Error("This upload does not belong to your account.");
+    if (data.mimeType !== "application/pdf" && !data.mimeType.startsWith("image/")) {
+      throw new Error("Upload a PDF or image file.");
+    }
+
+    const { data: file, error } = await context.supabase.storage.from("exam-uploads").download(data.filePath);
+    if (error || !file) throw new Error(error?.message ?? "The uploaded file could not be read.");
+    if (file.size === 0) throw new Error("The uploaded file is empty.");
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 32768) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+    }
+
+    const out = await callAI(
+      `You read official ${data.board || "exam board"} ${data.subject} MARKING SCHEMES (also called mark schemes, MS, marking criteria or answer keys).
+This document is an answer guide, not a question paper. Do NOT require printed question body text and do NOT reject the document because it has no full questions.
+Return JSON with keys:
+- is_mark_scheme (true when the document is a marking scheme, answer key or marking criteria; false when it is a plain question paper)
+- paper_type (string such as "Paper 1", or "" when not printed)
+- exam_year (4-digit integer or null)
+- scheme_text (a clean plain-text transcription of the whole marking guidance, keeping question labels, accepted answers, method marks, and any generic marking principles, in reading order)
+- entries (array of objects with exactly: question_number (the printed label, e.g. "1", "2(a)", "3(b)(ii)"), answer_points (array of short strings — the accepted answer points, method marks, working steps or credit criteria for that label), marks (integer total for that label, 1 when not printed))
+Transcribe faithfully. Invent nothing. Keep formulas, units and command-word conventions exactly as printed.`,
+      `Transcribe this ${data.subject} document for ${data.board || "the exam board"}. Decide whether it is a marking scheme, then map every marking entry to its question label. Output valid JSON only.`,
+      { mimeType: data.mimeType, data: btoa(binary) },
+    );
+
+    const schemeText = String(out["scheme_text"] ?? "").trim();
+    const rawEntries = Array.isArray(out["entries"]) ? out["entries"] : [];
+    const entries: MarkSchemeEntry[] = rawEntries.flatMap((value): MarkSchemeEntry[] => {
+      if (!value || typeof value !== "object") return [];
+      const item = value as Record<string, unknown>;
+      const points = (Array.isArray(item["answer_points"]) ? item["answer_points"] : [])
+        .map((point) => String(point).trim())
+        .filter(Boolean);
+      if (!points.length) return [];
+      return [
+        {
+          question_number: String(item["question_number"] ?? "").trim(),
+          answer_points: points,
+          marks: Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1)),
+        },
+      ];
+    });
+
+    // Metadata keyword check plus the model's own content check.
+    const detected =
+      out["is_mark_scheme"] === true ||
+      MARK_SCHEME_NAME_PATTERN.test(data.fileName) ||
+      MARK_SCHEME_NAME_PATTERN.test(schemeText.slice(0, 2000));
+
+    if (!detected) {
+      return { detected: false as const, paper_type: "", exam_year: null, scheme_text: "", entries: [] };
+    }
+    if (!schemeText && !entries.length) throw new Error("This marking scheme could not be read. Try a clearer file.");
+
+    const yearValue = Math.round(Number(out["exam_year"] ?? 0));
+    const paperType = (data.paperType ?? "").trim() || String(out["paper_type"] ?? "").trim();
+    const examYear =
+      data.examYear ?? (yearValue >= 1990 && yearValue <= 2100 ? yearValue : null);
+
+    const { error: saveError } = await context.supabase
+      .from("mark_schemes")
+      .upsert(
+        {
+          user_id: context.userId,
+          subject: data.subject,
+          board: data.board || null,
+          paper_type: paperType || null,
+          exam_year: examYear,
+          file_path: data.filePath,
+          original_name: data.fileName,
+          scheme_text: schemeText.slice(0, 200000),
+          entries,
+          metadata: { extracted_by_ai: true, entry_count: entries.length },
+        },
+        { onConflict: "user_id,subject,paper_type,exam_year" },
+      );
+    // Unique index uses COALESCE, so fall back to a manual replace when upsert cannot match it.
+    if (saveError) {
+      await context.supabase
+        .from("mark_schemes")
+        .delete()
+        .eq("user_id", context.userId)
+        .eq("subject", data.subject)
+        .eq("paper_type", paperType || "")
+        .eq("exam_year", examYear ?? 0);
+      const { error: insertError } = await context.supabase.from("mark_schemes").insert({
+        user_id: context.userId,
+        subject: data.subject,
+        board: data.board || null,
+        paper_type: paperType || null,
+        exam_year: examYear,
+        file_path: data.filePath,
+        original_name: data.fileName,
+        scheme_text: schemeText.slice(0, 200000),
+        entries,
+        metadata: { extracted_by_ai: true, entry_count: entries.length },
+      });
+      if (insertError) throw new Error(insertError.message);
+    }
+
+    return {
+      detected: true as const,
+      paper_type: paperType,
+      exam_year: examYear,
+      scheme_text: schemeText,
+      entries,
+    };
+  });
 
 
 export const deconstructQuestion = createServerFn({ method: "POST" })
@@ -264,12 +396,42 @@ export const coachStrategy = createServerFn({ method: "POST" })
       board: string;
       strategy: string;
       marks: number;
+      paperType?: string | null;
+      examYear?: number | null | undefined;
+      questionNumber?: string | null;
       parts?: { label: string; question_text: string; strategy: string }[];
     }) => input,
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const parts = (data.parts ?? []).filter((p) => p.question_text.trim().length > 0);
     const multi = parts.length > 1;
+
+    // Pull the official marking scheme saved for this exact subject / paper / year, when one exists.
+    let schemeBrief = "";
+    {
+      let query = context.supabase
+        .from("mark_schemes")
+        .select("scheme_text, entries, paper_type, exam_year, original_name")
+        .eq("user_id", context.userId)
+        .eq("subject", data.subject)
+        .limit(1);
+      if (data.paperType) query = query.eq("paper_type", data.paperType);
+      if (data.examYear) query = query.eq("exam_year", data.examYear);
+      const { data: schemes } = await query;
+      const scheme = schemes?.[0];
+      if (scheme) {
+        const entries = (Array.isArray(scheme.entries) ? scheme.entries : []) as MarkSchemeEntry[];
+        const number = (data.questionNumber ?? "").trim().toLowerCase();
+        const relevant = number
+          ? entries.filter((entry) => String(entry.question_number ?? "").toLowerCase().startsWith(number.split(/[^a-z0-9]/)[0] ?? number))
+          : entries;
+        const lines = (relevant.length ? relevant : entries)
+          .slice(0, 20)
+          .map((entry) => `${entry.question_number} (${entry.marks} marks): ${entry.answer_points.join(" | ")}`)
+          .join("\n");
+        schemeBrief = `\n\nOFFICIAL MARKING SCHEME for this paper (${scheme.original_name ?? "uploaded scheme"}${scheme.paper_type ? `, ${scheme.paper_type}` : ""}${scheme.exam_year ? `, ${scheme.exam_year}` : ""}):\n${lines || String(scheme.scheme_text ?? "").slice(0, 4000)}`;
+      }
+    }
 
     const partsBrief = multi
       ? parts
@@ -286,16 +448,22 @@ Treat the named board as binding. Do not blend in conventions from another board
 You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether the correct formulas, rules or techniques were named.
 SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(data.subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
 You completely ignore missing numerical working, missing final answers, missing paragraph descriptions, missing raw data calculations, missing essays, missing text transformations, spelling and grammar. Never ask for calculations.
-Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively.
+${
+  schemeBrief
+    ? "The official marking scheme for this exact paper is supplied below. Mark strictly against it: credit strategy steps that would earn its listed marking points, and name the marking points she missed."
+    : "Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively."
+}
+
 ${
   multi
     ? `This question has ${parts.length} separate sub-questions and she wrote a separate blueprint for each. Grade EVERY sub-question independently on its own merits: never let one part's quality change another part's judgement, and never merge them. A blank part scores 0 with a calm prompt about what its first step should have been.
 Reply as JSON with keys: part_feedback (array, one object per sub-question in the same order, each with label (copy the given label exactly), score (0-100 integer), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected for THAT part), missing_steps (array of short strings)), score (0-100 integer overall, the average across the parts), board_used, rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), struggle_tags (array of 1-4 short lowercase tags), encouragement (one warm short sentence about the whole question).`
     : `Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`
 }`,
-      multi
+      (multi
         ? `Whole question (${data.marks} marks total):\n${data.questionText}\n\n${partsBrief}`
-        : partsBrief,
+        : partsBrief) + schemeBrief,
+
     );
 
     const rawParts = Array.isArray(out["part_feedback"]) ? out["part_feedback"] : [];

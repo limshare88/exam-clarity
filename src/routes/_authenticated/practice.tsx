@@ -48,7 +48,10 @@ type ActiveQuestion = {
   question_text: string;
   marks: number;
   image_url: string | null;
+  paper_type: string | null;
+  exam_year: number | null;
   schematic: ExamSchematicData | null;
+
 };
 
 
@@ -163,7 +166,10 @@ function Workspace() {
           question_text: res.question_text,
           marks: res.marks,
           image_url: null,
+          paper_type: null,
+          exam_year: null,
           schematic: res.schematic,
+
         });
         nextMarks = res.marks;
       } catch (e) {
@@ -191,7 +197,10 @@ function Workspace() {
         question_text: pick.question_text,
         marks: pick.marks,
         image_url: pick.image_url ?? null,
+        paper_type: pick.paper_type ?? null,
+        exam_year: pick.exam_year ?? null,
         schematic: null,
+
       });
       nextMarks = pick.marks;
     }
@@ -299,7 +308,11 @@ function Workspace() {
           board: active.board,
           strategy: combined,
           marks: active.marks,
+          paperType: active.paper_type,
+          examYear: active.exam_year,
+          questionNumber: /^\s*(q?\d+[a-z()i.\s]*)/i.exec(active.question_text)?.[1]?.trim() ?? null,
           parts: payloadParts,
+
         },
       });
       setFeedback(res);

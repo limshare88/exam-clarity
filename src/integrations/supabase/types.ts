@@ -98,6 +98,54 @@ export type Database = {
         }
         Relationships: []
       }
+      mark_schemes: {
+        Row: {
+          board: string | null
+          created_at: string
+          entries: Json
+          exam_year: number | null
+          file_path: string | null
+          id: string
+          metadata: Json
+          original_name: string | null
+          paper_type: string | null
+          scheme_text: string
+          subject: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          board?: string | null
+          created_at?: string
+          entries?: Json
+          exam_year?: number | null
+          file_path?: string | null
+          id?: string
+          metadata?: Json
+          original_name?: string | null
+          paper_type?: string | null
+          scheme_text?: string
+          subject: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          board?: string | null
+          created_at?: string
+          entries?: Json
+          exam_year?: number | null
+          file_path?: string | null
+          id?: string
+          metadata?: Json
+          original_name?: string | null
+          paper_type?: string | null
+          scheme_text?: string
+          subject?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       session_logs: {
         Row: {
           ai_feedback: Json
