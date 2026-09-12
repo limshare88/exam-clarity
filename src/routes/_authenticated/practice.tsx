@@ -82,16 +82,18 @@ function Workspace() {
   const { data: bank } = useQuery({
     queryKey: ["questions", subject],
     queryFn: async () => {
+      seen.current.clear();
       const { data } = await supabase
         .from("exam_questions")
         .select("id, subject, board, question_text, marks")
         .eq("subject", subject)
         .order("created_at", { ascending: false })
-        .limit(40);
+        .limit(200);
       return data ?? [];
     },
     enabled: Boolean(subject),
   });
+
 
   const boardFor = useCallback(
     (s: string) => subjects.find((x) => x.subject === s)?.board ?? "",
