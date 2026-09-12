@@ -197,7 +197,10 @@ function Workspace() {
         question_text: pick.question_text,
         marks: pick.marks,
         image_url: pick.image_url ?? null,
+        paper_type: pick.paper_type ?? null,
+        exam_year: pick.exam_year ?? null,
         schematic: null,
+
       });
       nextMarks = pick.marks;
     }
