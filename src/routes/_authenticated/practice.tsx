@@ -20,6 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Mic, Volume2, Square } from "lucide-react";
 import { toast } from "sonner";
 
@@ -471,22 +479,35 @@ function Workspace() {
               {active.subject} · {active.board} · {active.marks} marks
             </p>
             {active.image_url && (
-              <a
-                href={active.image_url}
-                target="_blank"
-                rel="noreferrer"
-                className="block overflow-hidden rounded-2xl border-2 border-border bg-card p-2"
-              >
-                <img
-                  src={active.image_url}
-                  alt={`Diagram printed with this ${active.subject} question`}
-                  loading="lazy"
-                  className="mx-auto max-h-80 w-auto rounded-xl object-contain"
-                />
-                <span className="mt-2 block text-center text-xs text-muted-foreground">
-                  Tap the picture to see it larger.
-                </span>
-              </a>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="block w-full overflow-hidden rounded-2xl border-2 border-border bg-card p-2 text-left"
+                  >
+                    <img
+                      src={active.image_url}
+                      alt={`Diagram printed with this ${active.subject} question`}
+                      loading="lazy"
+                      className="mx-auto max-h-80 w-auto rounded-xl object-contain"
+                    />
+                    <span className="mt-2 block text-center text-xs text-muted-foreground">
+                      Tap the picture to see it larger.
+                    </span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-[95vw] sm:max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle>Picture from the exam paper</DialogTitle>
+                    <DialogDescription>Pinch or scroll to look closely, then close this box.</DialogDescription>
+                  </DialogHeader>
+                  <img
+                    src={active.image_url}
+                    alt={`Enlarged diagram printed with this ${active.subject} question`}
+                    className="max-h-[70vh] w-full rounded-xl bg-card object-contain"
+                  />
+                </DialogContent>
+              </Dialog>
             )}
             {active.schematic && <ExamSchematic diagram={active.schematic} subject={active.subject} />}
 
