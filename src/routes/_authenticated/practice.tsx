@@ -141,6 +141,7 @@ function Workspace() {
   const resetQuestionState = useCallback(() => {
     setBlocks(null);
     setStrategy("");
+    setPartStrategies({});
     setFeedback(null);
     startedAt.current = Date.now();
   }, []);
@@ -159,6 +160,7 @@ function Workspace() {
           board: boardFor(subject),
           question_text: res.question_text,
           marks: res.marks,
+          image_url: null,
         });
         nextMarks = res.marks;
       } catch (e) {
@@ -166,7 +168,7 @@ function Workspace() {
       }
       setBusy(null);
     } else {
-      const pool = bank ?? [];
+      const pool = filteredBank;
       if (!pool.length) {
         setActive(null);
         return;
@@ -185,6 +187,7 @@ function Workspace() {
         board: pick.board ?? boardFor(subject),
         question_text: pick.question_text,
         marks: pick.marks,
+        image_url: pick.image_url ?? null,
       });
       nextMarks = pick.marks;
     }
@@ -193,7 +196,8 @@ function Workspace() {
       setSecondsLeft((profile?.timer_seconds ?? 60) * Math.max(nextMarks, 1));
     }
     else setSecondsLeft(null);
-  }, [subject, mode, bank, boardFor, profile, reinforce, resetQuestionState]);
+  }, [subject, mode, filteredBank, boardFor, profile, reinforce, resetQuestionState]);
+
 
 
   // countdown
