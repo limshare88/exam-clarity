@@ -105,6 +105,8 @@ STEP 2 — DELETE FRONT MATTER. Completely discard, and never merge into any que
 
 STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number and keep each subpart's printed label, e.g. "(a) ... (b) ...", exactly where it appears so the text can be broken into blocks later. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
 
+MULTIPLE CHOICE. When a question offers answer options (A, B, C, D, tick boxes, bubbles or "which of the following"), it is ONE question, never several. Keep the stem and every option inside a single question_text, each option on its own line written as "A. ...", "B. ...". Never turn options into separate questions and never relabel them as sub-parts.
+
 STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
 
 STEP 5 — DIAGRAMS. Decide whether the question has its own diagram, chart, graph, table image, circuit, map or structural illustration printed with it. Set has_diagram true only then. When true, set diagram_box to the tight rectangle around that visual as fractions of the full page: {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner. Exclude surrounding body text from the box. When there is no visual, set has_diagram false and diagram_box null.
