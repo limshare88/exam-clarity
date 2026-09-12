@@ -9,3 +9,4 @@
 - [x] Verify AI, build, and key mobile/desktop screens.
 - [x] Add dynamic monochrome Reinforce schematics for Physics, Chemistry, Biology, and Mathematics.
 - [x] Verify generated schematic requests and mobile diagram rendering.
+- [x] Nested, multi-style sub-question hierarchy parsing and indented rendering.
