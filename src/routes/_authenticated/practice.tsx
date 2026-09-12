@@ -65,12 +65,15 @@ function Workspace() {
 
   const [mode, setMode] = useState<Mode>("practice");
   const [subject, setSubject] = useState("");
+  const [paperFilter, setPaperFilter] = useState("all");
+  const [yearFilter, setYearFilter] = useState("all");
   const [active, setActive] = useState<ActiveQuestion | null>(null);
   const [blocks, setBlocks] = useState<Deconstructed | null>(null);
   const [strategy, setStrategy] = useState("");
+  const [partStrategies, setPartStrategies] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
+  const [recording, setRecording] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const startedAt = useRef<number>(Date.now());
   const seen = useRef<Set<string>>(new Set());
@@ -90,7 +93,7 @@ function Workspace() {
       seen.current.clear();
       const { data } = await supabase
         .from("exam_questions")
-        .select("id, subject, board, question_text, marks")
+        .select("id, subject, board, question_text, marks, image_url, paper_type, exam_year")
         .eq("subject", subject)
         .order("created_at", { ascending: false })
         .limit(200);
@@ -98,6 +101,36 @@ function Workspace() {
     },
     enabled: Boolean(subject),
   });
+
+  // Paper and Year choices come from what actually exists for this subject.
+  const paperOptions = useMemo(
+    () => Array.from(new Set((bank ?? []).map((q) => q.paper_type).filter(Boolean) as string[])).sort(),
+    [bank],
+  );
+  const yearOptions = useMemo(() => {
+    const years = (bank ?? [])
+      .filter((q) => paperFilter === "all" || q.paper_type === paperFilter)
+      .map((q) => q.exam_year)
+      .filter((y): y is number => typeof y === "number");
+    return Array.from(new Set(years)).sort((a, b) => b - a);
+  }, [bank, paperFilter]);
+
+  const filteredBank = useMemo(
+    () =>
+      (bank ?? []).filter(
+        (q) =>
+          (paperFilter === "all" || q.paper_type === paperFilter) &&
+          (yearFilter === "all" || String(q.exam_year ?? "") === yearFilter),
+      ),
+    [bank, paperFilter, yearFilter],
+  );
+
+  // Reset the filters whenever the subject changes so stale combinations never stick.
+  useEffect(() => {
+    setPaperFilter("all");
+    setYearFilter("all");
+  }, [subject]);
+
 
 
   const boardFor = useCallback(
