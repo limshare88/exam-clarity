@@ -356,52 +356,56 @@ function Admin() {
         </Button>
       </section>
 
-      {extracted.length > 0 && (
-        <section className="surface-card space-y-4 p-5" aria-live="polite">
-          <div>
-            <h2 className="text-xl font-bold">Review extracted questions</h2>
-            <p className="text-sm text-muted-foreground">Only the questions below will be saved. Check the marks before confirming.</p>
+      <section className="surface-card space-y-3 p-5">
+        <div>
+          <h2 className="text-xl font-bold">📚 Uploaded papers ({papers?.length ?? 0})</h2>
+          <p className="text-sm text-muted-foreground">
+            Questions are saved automatically when a paper is read.
+          </p>
+        </div>
+        {(papers ?? []).map((paper) => (
+          <div
+            key={paper.file_path}
+            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-border bg-cream p-4"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-semibold">{paper.original_name}</p>
+              <p className="text-sm text-muted-foreground">
+                {paper.subject} · {paper.count} question{paper.count === 1 ? "" : "s"} ·{" "}
+                {format(new Date(paper.created_at), "d MMM yyyy")}
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => deletePaper(paper)}
+              className="tap-lg shrink-0 rounded-2xl border-2 border-border text-sm"
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              Delete Paper
+            </Button>
           </div>
-          <div className="space-y-3">
-            {extracted.map((question, index) => (
-              <article key={`${question.question_number}-${index}`} className="rounded-2xl border-2 border-border bg-cream p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="font-bold">Question {question.question_number}</p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove question ${question.question_number}`}
-                    onClick={() => setExtracted((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </Button>
-                </div>
-                <label className="mt-2 block text-sm font-bold" htmlFor={`question-text-${index}`}>Question text</label>
-                <Textarea
-                  id={`question-text-${index}`}
-                  value={question.question_text}
-                  onChange={(event) => setExtracted((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, question_text: event.target.value } : item))}
-                  className="reading-text mt-1 min-h-28 rounded-xl bg-card"
-                />
-                <label className="mt-3 block text-sm font-bold" htmlFor={`question-marks-${index}`}>Printed marks</label>
-                <Input
-                  id={`question-marks-${index}`}
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={question.marks}
-                  onChange={(event) => setExtracted((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, marks: Math.max(1, Number(event.target.value) || 1) } : item))}
-                  className="mt-1 h-12 rounded-xl bg-card"
-                />
-              </article>
-            ))}
-          </div>
-          <Button onClick={saveExtractedQuestions} disabled={busy} className="tap-lg w-full rounded-2xl text-base">
-            {busy ? "Saving…" : `Save ${extracted.length} reviewed question${extracted.length === 1 ? "" : "s"}`}
+        ))}
+        {!papers?.length && <p className="text-muted-foreground">No papers uploaded yet.</p>}
+      </section>
+
+      <Dialog open={duplicateName !== null} onOpenChange={(o) => !o && setDuplicateName(null)}>
+        <DialogContent className="rounded-3xl border-2 border-border">
+          <DialogHeader>
+            <DialogTitle>⚠️ This exam paper has already been uploaded to your question bank.</DialogTitle>
+            <DialogDescription>
+              {duplicateName} is already saved, so nothing new was added. Delete the existing paper
+              first if you want to read it again.
+            </DialogDescription>
+          </DialogHeader>
+          <Button
+            onClick={() => setDuplicateName(null)}
+            className="tap-lg w-full rounded-2xl text-base"
+          >
+            Okay
           </Button>
-        </section>
-      )}
+        </DialogContent>
+      </Dialog>
+
 
       <section className="surface-card space-y-3 p-5">
         <h2 className="text-xl font-bold">🗂️ Question bank ({questions?.length ?? 0})</h2>
