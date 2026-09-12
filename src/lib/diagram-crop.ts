@@ -41,7 +41,7 @@ export async function renderPaperPages(
     await page.render({ canvas, canvasContext: context, viewport }).promise;
     out.set(pageNumber, canvas);
   }
-  await doc.destroy();
+  await doc.cleanup();
   return out;
 }
 
