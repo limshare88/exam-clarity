@@ -208,13 +208,23 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
     }
 
     const parent = stack[stack.length - 1];
+
+    // "1a" then "1b": the repeated main number is the same parent, not a new one.
+    const siblings = parent ? parent.node.children : roots;
+    const twin = siblings[siblings.length - 1];
+    if (!parent && twin && twin.label === marker.label && twin.label) {
+      stack.push({ kind: marker.kind, indent: marker.indent, node: twin });
+      if (body && !twin.text) twin.text = body;
+      return;
+    }
+
     const node: QuestionPart = {
       label: marker.label,
       path: `${parent?.node.path ?? ""}${marker.label}`,
       depth: stack.length,
       text: body,
       children: [],
-    };
+
 
     if (parent) parent.node.children.push(node);
     else roots.push(node);
