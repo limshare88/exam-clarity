@@ -9,7 +9,9 @@ const PART_MARKER =
   /(?:^|\n|\s)(\(?(?:[a-h]|i{1,3}|iv|vi{0,3}|ix|x)\)(?:\s*\((?:i{1,3}|iv|vi{0,3}|ix|x)\))?)(?=\s)/gi;
 
 // Printed multiple-choice option markers: "A.", "B)", "(C)", "□ D", "○ A".
-const OPTION_MARKER = /(?:^|\n|\s)[(\[]?\s*([A-Da-d])\s*[).\]:]\s+/g;
+// Uppercase letters only: exam boards print MCQ options as A/B/C/D, while
+// lowercase (a) (b) (c) labels are open-ended sub-questions.
+const OPTION_MARKER = /(?:^|\n|\s)[(\[]?\s*([A-D])\s*[).\]:]\s+/g;
 
 const MCQ_PHRASE =
   /(which (one )?of the following|tick (one|the) box|select (one|the correct)|choose (one|the correct)|circle the (correct|letter)|shade (one|the) (box|bubble)|answer [a-d],? ?[a-d]|multiple[\s-]?choice)/i;
