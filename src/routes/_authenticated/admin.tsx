@@ -64,8 +64,7 @@ function Admin() {
   const [marks, setMarks] = useState("3");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
-  const [extracted, setExtracted] = useState<ExtractedExamQuestion[]>([]);
+  const [duplicateName, setDuplicateName] = useState<string | null>(null);
   const extractQuestions = useServerFn(extractExamQuestions);
 
   const [timeframe, setTimeframe] = useState<"all" | "month" | "custom">("all");
