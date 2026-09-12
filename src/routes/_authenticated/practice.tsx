@@ -7,6 +7,7 @@ import { useProfile, useRefreshProfile, awardCoins } from "@/hooks/useProfile";
 import { AppShell } from "@/components/AppShell";
 import { VocabText } from "@/components/VocabText";
 import { coachStrategy, deconstructQuestion, generateReinforceQuestion } from "@/lib/ai.functions";
+import { subjectStrategyRule } from "@/lib/subjects";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
