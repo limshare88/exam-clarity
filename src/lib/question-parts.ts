@@ -70,10 +70,20 @@ function classify(token: string, openKinds: MarkerKind[]): MarkerKind | null {
   if (ROMAN.test(value)) {
     // "i" and "v" are both letters and numerals: read them as numerals only when a
     // lettered level is already open above them (9 -> (a) -> (i)).
-    if (value.length === 1 && LETTER.test(value) && !openKinds.includes("letter")) return "letter";
+    if (value.length === 1 && LETTER.test(value) && token === value && !openKinds.includes("letter")) {
+      return "letter";
+    }
     return "roman";
   }
-  if (LETTER.test(value)) return "letter";
+  if (LETTER.test(value)) {
+    // Only LOWERCASE single letters are structural sub-part markers, e.g. "(a)" "(b)".
+    // Uppercase A/B/C/D are reserved for printed multiple-choice options (see
+    // OPTION_MARKER / isMultipleChoice above) and must never be read as a marker here
+    // — otherwise a block of MCQ options gets mistaken for independent sub-questions
+    // and split into fake nested (a)(b)(c)(d) parts.
+    if (token !== value) return null;
+    return "letter";
+  }
   return null;
 }
 
@@ -182,8 +192,16 @@ function findMarkers(text: string): Marker[] {
 export function splitQuestionParts(raw: string): QuestionPart[] {
   const text = (raw ?? "").replace(/\r/g, "").replace(/\s+$/, "");
   if (!text.trim()) return [{ label: "", path: "", depth: 0, text: "", children: [] }];
-  if (isMultipleChoice(text)) return [{ label: "", path: "", depth: 0, text: text.trim(), children: [] }];
 
+  // Note: we deliberately do NOT gate on isMultipleChoice(text) here. That check scans
+  // the whole raw string for an A/B/C/D option run and used to short-circuit the entire
+  // question — including any real (a)/(i)/(ii) structure around the MCQ block — into a
+  // single flat node. A question can legitimately contain an MCQ nested several levels
+  // deep (e.g. 3 -> (a) -> (i) is the MCQ, (ii) is open-ended) alongside real structure,
+  // so "is there an MCQ somewhere" must never short-circuit "does this question have
+  // sub-parts". Genuine parts are found below via findMarkers; a question that truly has
+  // no printed sub-parts (MCQ-only or otherwise) already falls out through the
+  // `markers.length < 2` branch immediately after, with the same single-block result.
   const markers = findMarkers(text);
   if (markers.length < 2) {
     return [{ label: "", path: "", depth: 0, text: text.trim(), children: [] }];
