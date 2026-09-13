@@ -155,7 +155,16 @@ function findMarkers(text: string): Marker[] {
             end: offset + token.at + token.len,
             label: pretty(token.raw, kind),
             kind,
-            indent: indent + accepted,
+            // All tokens in one compound cluster ("9(a)(i)", or "1." and "(a)" run
+            // together as "1. (a) ...") share the line's real physical indent. Their
+            // relative nesting is decided by MARKER_RANK (number -> letter -> roman) in
+            // the pop logic below, not by a synthetic per-token indent bump: bumping
+            // indent here used to make a compound-clustered "(a)" register as more
+            // indented than a later, genuinely-standalone "(i)" printed on its own
+            // unindented line — even though they're meant to nest normally — which
+            // caused the pop logic to treat the standalone marker as "shallower" and
+            // close (a) prematurely instead of nesting under it.
+            indent,
           });
           if (!openKinds.includes(kind)) openKinds.push(kind);
           accepted += 1;
