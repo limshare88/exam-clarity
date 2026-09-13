@@ -11,6 +11,11 @@ export type QuestionPart = {
 
 type MarkerKind = "number" | "letter" | "roman";
 
+// Natural exam-numbering hierarchy, shallowest first: 9 -> (a) -> (i). Used to decide
+// whether an incoming marker closes the currently open level(s) when indentation alone
+// doesn't say so (see the pop logic in splitQuestionParts).
+const MARKER_RANK: Record<MarkerKind, number> = { number: 0, letter: 1, roman: 2 };
+
 type Marker = {
   /** Index in the source text where the marker starts. */
   index: number;
@@ -218,11 +223,26 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
     const next = markers[i + 1]?.index ?? text.length;
     const body = text.slice(marker.end, next).replace(/^[\s).:\]-]+/, "").trim();
 
-    // Pop to the level this marker belongs to: same style, or shallower indentation.
+    // Pop to the level this marker belongs to. Indentation is the primary signal, exactly
+    // as printed: less-indented always closes the open (deeper) level, more-indented is
+    // always a genuine child (e.g. a "1." "2." calculation-steps list nested under a
+    // lettered part stays nested, even though "number" is usually the outermost kind).
+    // Indentation only fails to say anything when it TIES — most often because
+    // scraped/OCR'd exam text is flattened with zero indentation throughout. In that case
+    // fall back to the natural exam-numbering hierarchy (number -> letter -> roman): a
+    // marker whose kind is the same as, or naturally shallower than, the open level closes
+    // it. Without this fallback, "(b)" following "(a)(iii)" at equal (zero) indentation
+    // would get swallowed as a child of "(iii)" instead of becoming a sibling of "(a)".
     while (stack.length) {
       const top = stack[stack.length - 1]!;
-      if (top.kind === marker.kind || marker.indent < top.indent) stack.pop();
-      else break;
+      if (marker.indent < top.indent) {
+        stack.pop();
+      } else if (marker.indent === top.indent) {
+        const sameKind = top.kind === marker.kind;
+        const shallowerKind = MARKER_RANK[marker.kind] <= MARKER_RANK[top.kind];
+        if (sameKind || shallowerKind) stack.pop();
+        else break;
+      } else break;
     }
 
     const parent = stack[stack.length - 1];
