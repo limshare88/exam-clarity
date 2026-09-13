@@ -49,6 +49,11 @@ export const Route = createFileRoute("/_authenticated/practice")({
 
 type Mode = "practice" | "challenge" | "reinforce";
 
+/** One printed diagram tied to the sub-part it illustrates. `label` matches a
+ * QuestionPart's `path` (e.g. "(a)(i)", "(b)"), or "" for a diagram that
+ * belongs to the question as a whole rather than one specific labelled part. */
+type QuestionDiagram = { label: string; url: string };
+
 type ActiveQuestion = {
   id: string | null;
   subject: string;
@@ -56,6 +61,7 @@ type ActiveQuestion = {
   question_text: string;
   marks: number;
   image_url: string | null;
+  diagrams: QuestionDiagram[];
   paper_type: string | null;
   exam_year: number | null;
   schematic: ExamSchematicData | null;
@@ -70,6 +76,23 @@ type Deconstructed = {
 };
 
 type Feedback = Awaited<ReturnType<typeof coachStrategy>>;
+
+/** Validates the `diagrams` jsonb column into typed entries. Falls back to the legacy
+ * single `image_url` column (as one whole-question, ""-labelled diagram) for rows
+ * saved before per-part diagrams existed. */
+function normalizeDiagrams(raw: unknown, imageUrl: string | null): QuestionDiagram[] {
+  const list = Array.isArray(raw)
+    ? raw.flatMap((entry): QuestionDiagram[] => {
+        if (!entry || typeof entry !== "object") return [];
+        const item = entry as Record<string, unknown>;
+        const url = typeof item["url"] === "string" ? item["url"] : "";
+        if (!url) return [];
+        return [{ label: typeof item["label"] === "string" ? item["label"] : "", url }];
+      })
+    : [];
+  if (list.length) return list;
+  return imageUrl ? [{ label: "", url: imageUrl }] : [];
+}
 
 function Workspace() {
   const { data: profile } = useProfile();
@@ -106,7 +129,7 @@ function Workspace() {
       seen.current.clear();
       const { data } = await supabase
         .from("exam_questions")
-        .select("id, subject, board, question_text, marks, image_url, paper_type, exam_year")
+        .select("id, subject, board, question_text, marks, image_url, diagrams, paper_type, exam_year")
         .eq("subject", subject)
         .order("created_at", { ascending: false })
         .limit(200);
@@ -174,6 +197,7 @@ function Workspace() {
           question_text: res.question_text,
           marks: res.marks,
           image_url: null,
+          diagrams: [],
           paper_type: null,
           exam_year: null,
           schematic: res.schematic,
@@ -205,6 +229,7 @@ function Workspace() {
         question_text: pick.question_text,
         marks: pick.marks,
         image_url: pick.image_url ?? null,
+        diagrams: normalizeDiagrams(pick.diagrams, pick.image_url ?? null),
         paper_type: pick.paper_type ?? null,
         exam_year: pick.exam_year ?? null,
         schematic: null,
@@ -256,6 +281,17 @@ function Workspace() {
     () => (active ? splitQuestionParts(active.question_text) : []),
     [active],
   );
+  // Groups this question's diagrams by the sub-part path they belong to, so each one
+  // renders next to the part it actually illustrates rather than all at the top.
+  const diagramsByLabel = useMemo(() => {
+    const map = new Map<string, QuestionDiagram[]>();
+    for (const diagram of active?.diagrams ?? []) {
+      const existing = map.get(diagram.label);
+      if (existing) existing.push(diagram);
+      else map.set(diagram.label, [diagram]);
+    }
+    return map;
+  }, [active]);
   // Only the deepest actionable questions get their own blueprint box.
   const answerParts = useMemo(() => leafParts(parts), [parts]);
   const multiPart = answerParts.length > 1;
@@ -482,43 +518,22 @@ function Workspace() {
             <p className="text-sm font-semibold text-muted-foreground">
               {active.subject} · {active.board} · {active.marks} marks
             </p>
-            {active.image_url && (
-              <Dialog>
-                <DialogTrigger asChild>
-                  <button
-                    type="button"
-                    className="block w-full overflow-hidden rounded-2xl border-2 border-border bg-card p-2 text-left"
-                  >
-                    <img
-                      src={active.image_url}
-                      alt={`Diagram printed with this ${active.subject} question`}
-                      loading="lazy"
-                      className="mx-auto max-h-80 w-auto rounded-xl object-contain"
-                    />
-                    <span className="mt-2 block text-center text-xs text-muted-foreground">
-                      Tap the picture to see it larger.
-                    </span>
-                  </button>
-                </DialogTrigger>
-                <DialogContent className="max-w-[95vw] sm:max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle>Picture from the exam paper</DialogTitle>
-                    <DialogDescription>Pinch or scroll to look closely, then close this box.</DialogDescription>
-                  </DialogHeader>
-                  <img
-                    src={active.image_url}
-                    alt={`Enlarged diagram printed with this ${active.subject} question`}
-                    className="max-h-[70vh] w-full rounded-xl bg-card object-contain"
-                  />
-                </DialogContent>
-              </Dialog>
-            )}
+            {/* Diagrams tied to a specific sub-part render inline next to that part below;
+                only whole-question ("") diagrams show here at the top. */}
+            {(diagramsByLabel.get("") ?? []).map((diagram, index) => (
+              <DiagramImage key={`${diagram.url}-${index}`} url={diagram.url} subject={active.subject} />
+            ))}
             {active.schematic && <ExamSchematic diagram={active.schematic} subject={active.subject} />}
 
             {multiPart ? (
               <div className="space-y-5">
                 {parts.map((part, index) => (
-                  <PartBlock key={`${part.path}-${index}`} part={part} subject={active.subject} />
+                  <PartBlock
+                    key={`${part.path}-${index}`}
+                    part={part}
+                    subject={active.subject}
+                    diagramsByLabel={diagramsByLabel}
+                  />
                 ))}
               </div>
             ) : (
@@ -730,8 +745,62 @@ function Workspace() {
     </AppShell>
   );
 }
-function PartBlock({ part, subject }: { part: QuestionPart; subject: string }) {
+// admin.tsx prepends "<question_number>. " onto question_text before saving, but the AI
+// labels diagrams using paths within its own question_text — which never includes that
+// leading number (see ai.functions.ts STEP 3). So a part path computed at practice time,
+// e.g. "1.(a)(i)", needs that leading number stripped before it can match a diagram
+// labelled "(a)(i)".
+function diagramLookupKey(path: string): string {
+  return path.replace(/^\d{1,2}[.)\]:-]?\s*/, "");
+}
+
+function DiagramImage({ url, subject }: { url: string; subject: string }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="block w-full overflow-hidden rounded-2xl border-2 border-border bg-card p-2 text-left"
+        >
+          <img
+            src={url}
+            alt={`Diagram printed with this ${subject} question`}
+            loading="lazy"
+            className="mx-auto max-h-80 w-auto rounded-xl object-contain"
+          />
+          <span className="mt-2 block text-center text-xs text-muted-foreground">
+            Tap the picture to see it larger.
+          </span>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-[95vw] sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Picture from the exam paper</DialogTitle>
+          <DialogDescription>Pinch or scroll to look closely, then close this box.</DialogDescription>
+        </DialogHeader>
+        <img
+          src={url}
+          alt={`Enlarged diagram printed with this ${subject} question`}
+          className="max-h-[70vh] w-full rounded-xl bg-card object-contain"
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PartBlock({
+  part,
+  subject,
+  diagramsByLabel,
+}: {
+  part: QuestionPart;
+  subject: string;
+  diagramsByLabel: Map<string, QuestionDiagram[]>;
+}) {
   const nested = part.depth > 0;
+  // The root stem's own diagrams (path "") are already shown at the top of the question,
+  // so only look up diagrams here for parts with a real printed label.
+  const ownDiagrams = part.path ? (diagramsByLabel.get(diagramLookupKey(part.path)) ?? []) : [];
   return (
     <div
       className={
@@ -744,10 +813,22 @@ function PartBlock({ part, subject }: { part: QuestionPart; subject: string }) {
     >
       {part.label && <p className="mb-2 text-lg font-bold text-primary">{part.label}</p>}
       {part.text && <VocabText text={part.text} subject={subject} />}
+      {ownDiagrams.length > 0 && (
+        <div className="mt-3 space-y-3">
+          {ownDiagrams.map((diagram, index) => (
+            <DiagramImage key={`${diagram.url}-${index}`} url={diagram.url} subject={subject} />
+          ))}
+        </div>
+      )}
       {part.children.length > 0 && (
         <div className="mt-2 space-y-2">
           {part.children.map((child, index) => (
-            <PartBlock key={`${child.path}-${index}`} part={child} subject={subject} />
+            <PartBlock
+              key={`${child.path}-${index}`}
+              part={child}
+              subject={subject}
+              diagramsByLabel={diagramsByLabel}
+            />
           ))}
         </div>
       )}

@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           board: string | null
           created_at: string
+          diagrams: Json
           exam_year: number | null
           file_path: string | null
           id: string
@@ -34,6 +35,7 @@ export type Database = {
         Insert: {
           board?: string | null
           created_at?: string
+          diagrams?: Json
           exam_year?: number | null
           file_path?: string | null
           id?: string
@@ -50,6 +52,7 @@ export type Database = {
         Update: {
           board?: string | null
           created_at?: string
+          diagrams?: Json
           exam_year?: number | null
           file_path?: string | null
           id?: string

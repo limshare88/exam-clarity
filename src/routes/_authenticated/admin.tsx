@@ -238,45 +238,60 @@ function Admin() {
 
 
         // Cut every detected diagram out of its page and store it alongside the question.
-        const diagramPages = result.questions.filter((q) => q.diagram_box).map((q) => q.page);
+        // A question can have more than one diagram (e.g. an answer-options table for
+        // one sub-part and a separate graph for another), so this is keyed per-question
+        // rather than assuming a single image per row.
+        const diagramPages = result.questions.flatMap((q) => (q.diagrams.length ? [q.page] : []));
         const pages = diagramPages.length ? await renderPaperPages(file, diagramPages) : new Map();
-        const imageUrls = new Map<number, string>();
+        const diagramsByQuestion = new Map<number, { label: string; url: string }[]>();
         for (let i = 0; i < result.questions.length; i += 1) {
           const question = result.questions[i]!;
-          const canvas = question.diagram_box ? pages.get(question.page) : undefined;
-          if (!question.diagram_box || !canvas) continue;
-          const url = await cropAndUploadDiagram(canvas, question.diagram_box, uid);
-          if (url) imageUrls.set(i, url);
+          if (!question.diagrams.length) continue;
+          const canvas = pages.get(question.page);
+          if (!canvas) continue;
+          const cropped: { label: string; url: string }[] = [];
+          for (const diagram of question.diagrams) {
+            const url = await cropAndUploadDiagram(canvas, diagram.box, uid);
+            if (url) cropped.push({ label: diagram.label, url });
+          }
+          if (cropped.length) diagramsByQuestion.set(i, cropped);
         }
 
         const chosenPaper = paperType.trim() || result.paper_type || null;
         const chosenYear = Number(examYear) || result.exam_year || null;
 
-        const rows = result.questions.map((question, index) => ({
-          user_id: uid,
-          subject,
-          board: board || null,
-          question_text: `${question.question_number}. ${question.question_text}`,
-          marks: question.marks,
-          source_type: file.type.includes("pdf") ? "pdf" : "image",
-          file_path: path,
-          image_url: imageUrls.get(index) ?? null,
-          paper_type: chosenPaper,
-          exam_year: chosenYear,
-          metadata: {
-            question_number: question.question_number,
-            extracted_by_ai: true,
-            original_name: file.name,
-            page: question.page,
-          },
-        }));
+        const rows = result.questions.map((question, index) => {
+          const diagrams = diagramsByQuestion.get(index) ?? [];
+          return {
+            user_id: uid,
+            subject,
+            board: board || null,
+            question_text: `${question.question_number}. ${question.question_text}`,
+            marks: question.marks,
+            source_type: file.type.includes("pdf") ? "pdf" : "image",
+            file_path: path,
+            // Kept for backward compatibility with older reads of this column; new
+            // rendering uses `diagrams`. Falls back to the whole-question ("") diagram,
+            // or the first one, so old code paths still show something.
+            image_url: diagrams.find((d) => !d.label)?.url ?? diagrams[0]?.url ?? null,
+            diagrams,
+            paper_type: chosenPaper,
+            exam_year: chosenYear,
+            metadata: {
+              question_number: question.question_number,
+              extracted_by_ai: true,
+              original_name: file.name,
+              page: question.page,
+            },
+          };
+        });
         const { error: insertError } = await supabase.from("exam_questions").insert(rows);
         if (insertError) throw new Error(insertError.message);
         setBusy(false);
         setFile(null);
         qc.invalidateQueries({ queryKey: ["questions"] });
         qc.invalidateQueries({ queryKey: ["papers"] });
-        const withDiagrams = imageUrls.size;
+        const withDiagrams = rows.filter((r) => r.diagrams.length > 0).length;
         toast.success(
           `${rows.length} question${rows.length === 1 ? "" : "s"} saved automatically` +
             (withDiagrams ? `, ${withDiagrams} with a diagram.` : "."),
