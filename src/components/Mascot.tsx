@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
-import chibiGirl from "@/assets/mascot-chibi-girl.png";
-import chibiBoy from "@/assets/mascot-chibi-boy.png";
-import longEar from "@/assets/mascot-long-ear.png";
-import helperRobot from "@/assets/mascot-helper-robot.png";
+import chibiGirlAsset from "@/assets/mascot-chibi-girl.png.asset.json";
+import chibiBoyAsset from "@/assets/mascot-chibi-boy.png.asset.json";
+import longEarAsset from "@/assets/mascot-long-ear.png.asset.json";
+import helperRobotAsset from "@/assets/mascot-helper-robot.png.asset.json";
 import { ShopIcon } from "@/components/ShopIcons";
 import { BackgroundScene } from "@/components/BackgroundScenes";
 
@@ -11,6 +11,8 @@ type MascotProps = {
   hat?: string | null | undefined;
   /** Item id of the equipped outfit, e.g. "fit-hoodie". */
   outfit?: string | null | undefined;
+  hairstyle?: string | null | undefined;
+  accessory?: string | null | undefined;
   /** Item id of the equipped desk toy, e.g. "toy-cat". */
   toy?: string | null | undefined;
   /** Item id of the equipped background scene, e.g. "bg-study". */
@@ -21,14 +23,14 @@ type MascotProps = {
 };
 
 const CHARACTERS: Record<string, { src: string; name: string }> = {
-  "mascot-chibi": { src: chibiGirl, name: "Mika, the chibi learner" },
-  "mascot-chibi-boy": { src: chibiBoy, name: "Leo, the chibi learner" },
-  "mascot-long-ear": { src: longEar, name: "Mallow, the long-eared companion" },
-  "mascot-robot": { src: helperRobot, name: "Pip, the helper robot" },
+  "mascot-chibi": { src: chibiGirlAsset.url, name: "Mika, the chibi learner" },
+  "mascot-chibi-boy": { src: chibiBoyAsset.url, name: "Leo, the chibi learner" },
+  "mascot-long-ear": { src: longEarAsset.url, name: "Mallow, the long-eared companion" },
+  "mascot-robot": { src: helperRobotAsset.url, name: "Pip, the helper robot" },
 };
-const DEFAULT_CHARACTER = { src: chibiGirl, name: "Mika, the chibi learner" };
+const DEFAULT_CHARACTER = { src: chibiGirlAsset.url, name: "Mika, the chibi learner" };
 
-export function Mascot({ hat, outfit, toy, background, character, className }: MascotProps) {
+export function Mascot({ hat, outfit, hairstyle, accessory, toy, background, character, className }: MascotProps) {
   const selected = CHARACTERS[character ?? ""] ?? DEFAULT_CHARACTER;
   return (
     <div
@@ -47,6 +49,9 @@ export function Mascot({ hat, outfit, toy, background, character, className }: M
           height={1024}
           className="absolute inset-0 h-full w-full object-contain drop-shadow-lg"
         />
+        {hairstyle && (
+          <ShopIcon itemId={hairstyle} className="absolute left-1/2 top-[-2%] h-[42%] w-[88%] -translate-x-1/2 drop-shadow-md" />
+        )}
         {/* Equipped items render as the actual shop icon, positioned directly on the
             character, so what's equipped is what she sees worn — not a disconnected
             floating sticker. */}
@@ -61,6 +66,9 @@ export function Mascot({ hat, outfit, toy, background, character, className }: M
             itemId={hat}
             className="absolute left-1/2 top-[-6%] h-24 w-24 -translate-x-1/2 drop-shadow-md"
           />
+        )}
+        {accessory && (
+          <ShopIcon itemId={accessory} className="absolute bottom-[16%] right-[-18%] h-20 w-20 drop-shadow-md" />
         )}
       </div>
 

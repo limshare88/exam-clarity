@@ -30,23 +30,28 @@ export const TIMER_OPTIONS = [
 
 export type SubjectBoard = { subject: string; board: string };
 
+export const CHILD_AVATARS = [
+  { item_id: "mascot-chibi", item_name: "Mika", emoji: "🌸" },
+  { item_id: "mascot-chibi-boy", item_name: "Leo", emoji: "🌟" },
+] as const;
+
 export const SHOP_ITEMS = [
-  { item_id: "mascot-chibi", item_name: "Mika, Chibi Learner", category: "Mascots", price: 0, emoji: "🌸" },
-  { item_id: "mascot-chibi-boy", item_name: "Leo, Chibi Learner", category: "Mascots", price: 0, emoji: "🌟" },
-  { item_id: "mascot-long-ear", item_name: "Mallow, Long-Eared Friend", category: "Mascots", price: 180, emoji: "🌿" },
-  { item_id: "mascot-robot", item_name: "Pip, Helper Robot", category: "Mascots", price: 240, emoji: "⚡" },
-  { item_id: "hat-star", item_name: "Star Beret", category: "Hats", price: 40, emoji: "🎩" },
-  { item_id: "hat-bunny", item_name: "Bunny Ears", category: "Hats", price: 60, emoji: "🐰" },
-  { item_id: "hat-crown", item_name: "Pastel Crown", category: "Hats", price: 120, emoji: "👑" },
-  { item_id: "fit-hoodie", item_name: "Mint Hoodie", category: "Outfits", price: 80, emoji: "🧥" },
-  { item_id: "fit-sailor", item_name: "Lavender Uniform", category: "Outfits", price: 110, emoji: "👗" },
-  { item_id: "fit-lab", item_name: "Science Lab Coat", category: "Outfits", price: 150, emoji: "🥼" },
-  { item_id: "toy-cat", item_name: "Desk Cat", category: "Desk Toys", price: 50, emoji: "🐱" },
-  { item_id: "toy-plant", item_name: "Tiny Plant", category: "Desk Toys", price: 35, emoji: "🪴" },
-  { item_id: "toy-lamp", item_name: "Glow Lamp", category: "Desk Toys", price: 70, emoji: "💡" },
-  { item_id: "bg-study", item_name: "Cozy Study Room", category: "Backgrounds", price: 90, emoji: "📚" },
-  { item_id: "bg-night", item_name: "Starry Night Bedroom", category: "Backgrounds", price: 130, emoji: "🌙" },
-  { item_id: "bg-classroom", item_name: "Bright Classroom", category: "Backgrounds", price: 110, emoji: "🏫" },
+  { item_id: "mika-outfit-cloud", item_name: "Cloud Day Dress", category: "Outfits", price: 0, emoji: "☁️", avatar_id: "mascot-chibi", starter: true },
+  { item_id: "mika-outfit-sailor", item_name: "Lavender Sailor Set", category: "Outfits", price: 0, emoji: "💜", avatar_id: "mascot-chibi", starter: true },
+  { item_id: "leo-outfit-sky", item_name: "Sky Explorer Set", category: "Outfits", price: 0, emoji: "🩵", avatar_id: "mascot-chibi-boy", starter: true },
+  { item_id: "leo-outfit-varsity", item_name: "Mint Varsity Set", category: "Outfits", price: 0, emoji: "🌿", avatar_id: "mascot-chibi-boy", starter: true },
+  { item_id: "mika-outfit-starlight", item_name: "Starlight Party Dress", category: "Outfits", price: 50, emoji: "✨", avatar_id: "mascot-chibi", starter: false },
+  { item_id: "mika-outfit-lab", item_name: "Mika Science Coat", category: "Outfits", price: 80, emoji: "🧪", avatar_id: "mascot-chibi", starter: false },
+  { item_id: "leo-outfit-cosmic", item_name: "Cosmic Adventure Set", category: "Outfits", price: 50, emoji: "🚀", avatar_id: "mascot-chibi-boy", starter: false },
+  { item_id: "leo-outfit-lab", item_name: "Leo Science Coat", category: "Outfits", price: 80, emoji: "🔬", avatar_id: "mascot-chibi-boy", starter: false },
+  { item_id: "mika-hair-braids", item_name: "Ribbon Twin Braids", category: "Hairstyles", price: 60, emoji: "🎀", avatar_id: "mascot-chibi", starter: false },
+  { item_id: "mika-hair-bob", item_name: "Moonlight Bob", category: "Hairstyles", price: 70, emoji: "🌙", avatar_id: "mascot-chibi", starter: false },
+  { item_id: "leo-hair-swoop", item_name: "Starlight Swoop", category: "Hairstyles", price: 60, emoji: "⭐", avatar_id: "mascot-chibi-boy", starter: false },
+  { item_id: "leo-hair-curls", item_name: "Soft Cloud Curls", category: "Hairstyles", price: 70, emoji: "☁️", avatar_id: "mascot-chibi-boy", starter: false },
+  { item_id: "mika-accessory-stars", item_name: "Star Hair Clips", category: "Accessories", price: 40, emoji: "🌟", avatar_id: "mascot-chibi", starter: false },
+  { item_id: "mika-accessory-satchel", item_name: "Study Satchel", category: "Accessories", price: 65, emoji: "📚", avatar_id: "mascot-chibi", starter: false },
+  { item_id: "leo-accessory-headphones", item_name: "Focus Headphones", category: "Accessories", price: 40, emoji: "🎧", avatar_id: "mascot-chibi-boy", starter: false },
+  { item_id: "leo-accessory-backpack", item_name: "Explorer Backpack", category: "Accessories", price: 65, emoji: "🎒", avatar_id: "mascot-chibi-boy", starter: false },
 ] as const;
 
 export type ShopItem = (typeof SHOP_ITEMS)[number];

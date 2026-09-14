@@ -10,3 +10,6 @@
 - [x] Add dynamic monochrome Reinforce schematics for Physics, Chemistry, Biology, and Mathematics.
 - [x] Verify generated schematic requests and mobile diagram rendering.
 - [x] Nested, multi-style sub-question hierarchy parsing and indented rendering.
+- [ ] Upgrade Mika and Leo with a character-specific Closet & Shop.
+- [ ] Add secure atomic outfit unlocking, coin deduction, and equipping.
+- [ ] Verify hosted character art and closet behavior on mobile and desktop.
