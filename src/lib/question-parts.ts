@@ -108,8 +108,10 @@ function findMarkers(text: string): Marker[] {
 
   for (const line of lines) {
     const indent = line.length - line.trimStart().length;
-    // Compound head: "9a", "9(a)", "9 (a) (i)" at the very start of the line.
-    const head = /^[ \t]*((?:\d{1,2}|[a-z]{1,4})[ \t]*[).\]]?)((?:[ \t]*\((?:\d{1,2}|[a-z]{1,4})\))*)/i.exec(
+    // Compound head: "9a", "9(a)", "9 (a) (i)" at the very start of the line. An optional
+    // leading "*" (Pearson/Edexcel's marker for an extended, quality-of-written-
+    // communication sub-question, e.g. "*(b)" or "*9") doesn't change what the marker is.
+    const head = /^[ \t]*\*?((?:\d{1,2}|[a-z]{1,4})[ \t]*[).\]]?)((?:[ \t]*\((?:\d{1,2}|[a-z]{1,4})\))*)/i.exec(
       line,
     );
 
@@ -173,8 +175,13 @@ function findMarkers(text: string): Marker[] {
       if (accepted) consumed = head[0].length;
     }
 
-    // Inline markers further along the same line: "... (b) Explain why ..."
-    const inline = /(?:^|\s)\(\s*(\d{1,2}|[a-z]{1,4})\s*\)(?=\s)/gi;
+    // Inline markers further along the same line: "... (b) Explain why ...". Also allow
+    // an optional leading "*" right before the paren, same as the head marker above — a
+    // sub-part like "*(ii)" printed with no space between the asterisk and "(" would
+    // otherwise sit right next to neither a line-start nor a whitespace character and be
+    // invisible to this regex entirely, silently merging that whole sub-part's content
+    // into the previous one's.
+    const inline = /(?:^|\s)\*?\(\s*(\d{1,2}|[a-z]{1,4})\s*\)(?=\s)/gi;
     inline.lastIndex = consumed;
     let hit: RegExpExecArray | null;
     while ((hit = inline.exec(line)) !== null) {
@@ -264,7 +271,14 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
 
   meaningfulMarkers.forEach((marker, i) => {
     const next = meaningfulMarkers[i + 1]?.index ?? text.length;
-    const body = text.slice(marker.end, next).replace(/^[\s).:\]-]+/, "").trim();
+    const body = text
+      .slice(marker.end, next)
+      .replace(/^[\s).:\]-]+/, "")
+      // Strip a trailing "*" left over when the NEXT marker was itself printed as "*(ii)"
+      // etc. — the asterisk sits just before that marker's "(" and so falls at the very
+      // end of THIS body slice, not inside the next marker's own text.
+      .replace(/\*\s*$/, "")
+      .trim();
 
     // A forceChild marker (a numbered sub-heading following an already-used top-level
     // number, see above) always nests under whatever is currently open — skip the normal
