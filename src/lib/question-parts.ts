@@ -217,19 +217,38 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
   // no printed sub-parts (MCQ-only or otherwise) already falls out through the
   // `markers.length < 2` branch immediately after, with the same single-block result.
   const markers = findMarkers(text);
-  if (markers.length < 2) {
+  // Answer sheets print numbered blank lines for "name two things" style questions
+  // ("1 .......... 2 .........."), and findMarkers can't tell a bare "1"/"2" like that
+  // apart from a genuine question number just from the token alone. Each question's own
+  // text should only ever contain ONE real top-level number (the question itself, e.g.
+  // "7." or "1."), so treat any LATER "number"-kind marker at the outermost (unindented)
+  // level as one of these printed blanks rather than a second real question start —
+  // otherwise it fractures the rest of the question into a bogus new top-level sibling
+  // (e.g. "1.(a)(i)" then "2.(b)" instead of "1.(a)(i)" then "1.(b)"). A number marker
+  // that's genuinely indented deeper still nests normally (e.g. calculation steps printed
+  // under a lettered part) — this only suppresses a second marker sitting at the very top.
+  let sawTopLevelNumber = false;
+  const meaningfulMarkers = markers.filter((marker) => {
+    if (marker.kind !== "number" || marker.indent > 0) return true;
+    if (!sawTopLevelNumber) {
+      sawTopLevelNumber = true;
+      return true;
+    }
+    return false;
+  });
+  if (meaningfulMarkers.length < 2) {
     return [{ label: "", path: "", depth: 0, text: text.trim(), children: [] }];
   }
 
   const roots: QuestionPart[] = [];
-  const stem = text.slice(0, markers[0]!.index).trim();
+  const stem = text.slice(0, meaningfulMarkers[0]!.index).trim();
   if (stem) roots.push({ label: "", path: "", depth: 0, text: stem, children: [] });
 
   // Stack of currently open levels; each entry remembers its marker style and indent.
   const stack: { kind: MarkerKind; indent: number; node: QuestionPart }[] = [];
 
-  markers.forEach((marker, i) => {
-    const next = markers[i + 1]?.index ?? text.length;
+  meaningfulMarkers.forEach((marker, i) => {
+    const next = meaningfulMarkers[i + 1]?.index ?? text.length;
     const body = text.slice(marker.end, next).replace(/^[\s).:\]-]+/, "").trim();
 
     // Pop to the level this marker belongs to. Indentation is the primary signal, exactly
