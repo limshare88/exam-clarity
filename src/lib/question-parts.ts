@@ -256,7 +256,25 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
     const next = markers[i + 1]?.index ?? text.length;
     const rawBody = text.slice(marker.end, next).replace(/\(\d{1,2}\)/g, "");
     const hasRealText = rawBody.replace(/[\s._\-–—·…]/g, "").length >= 3;
-    if (hasRealText) meaningfulMarkers.push({ ...marker, forceChild: true });
+    if (!hasRealText) return;
+    // A "which of these statements are correct" MCQ commonly numbers its statements
+    // (1, 2, 3) and THEN gives lettered A/B/C/D options referring back to them ("1 and 2
+    // only"). Those numbered statements look exactly like the genuine numbered-subheading
+    // case above (real text after a repeated top-level number), but splitting on them
+    // would fracture one MCQ into several fake sub-questions with no lettered options of
+    // their own. Detect this by checking whether an MCQ's lettered options appear
+    // somewhere ahead, up to the next marker that isn't itself part of this same numbered
+    // run (i.e. the next non-"number" marker, such as a genuine "(c)") — if so, this
+    // marker isn't a real split point at all, so it's dropped rather than force-nested.
+    let windowEnd = text.length;
+    for (let j = i + 1; j < markers.length; j += 1) {
+      if (markers[j]!.kind !== "number") {
+        windowEnd = markers[j]!.index;
+        break;
+      }
+    }
+    if (isMultipleChoice(text.slice(marker.index, windowEnd))) return;
+    meaningfulMarkers.push({ ...marker, forceChild: true });
   });
   if (meaningfulMarkers.length < 2) {
     return [{ label: "", path: "", depth: 0, text: text.trim(), children: [] }];
