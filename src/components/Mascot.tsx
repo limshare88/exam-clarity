@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import chibiGirl from "@/assets/mascot-chibi-girl.png";
-import chibiBoy from "@/assets/mascot-chibi-boy.svg";
+import chibiBoy from "@/assets/mascot-chibi-boy.png";
 import longEar from "@/assets/mascot-long-ear.png";
 import helperRobot from "@/assets/mascot-helper-robot.png";
 import { ShopIcon } from "@/components/ShopIcons";
