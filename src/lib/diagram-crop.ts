@@ -28,7 +28,19 @@ export async function renderPaperPages(
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default as string;
 
   const buffer = await file.arrayBuffer();
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
+  const doc = await pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    // pdf.js needs its WASM decoders (openjpeg.wasm for JPEG2000/JPX-encoded images,
+    // among others) to actually render every embedded image. It looks for them at
+    // `${wasmUrl}<exact filename>` — a plain string concatenation, not a resolvable
+    // import — so they must be served verbatim from a known path rather than bundled
+    // the normal way. Without this, a JPX-encoded photo (some exam boards embed
+    // photographs this way) silently renders as a blank area: pdf.js draws the rest of
+    // the page fine and gives no visible error, it just skips that one image entirely.
+    // See scripts/copy-pdfjs-wasm.mjs, which copies pdfjs-dist's wasm/ folder to
+    // public/pdfjs-wasm/ (served as-is by Vite) on every install/dev/build.
+    wasmUrl: "/pdfjs-wasm/",
+  }).promise;
   for (const pageNumber of wanted) {
     if (pageNumber > doc.numPages) continue;
     const page = await doc.getPage(pageNumber);

@@ -9,7 +9,10 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "postinstall": "node scripts/copy-pdfjs-wasm.mjs",
+    "predev": "node scripts/copy-pdfjs-wasm.mjs",
+    "prebuild": "node scripts/copy-pdfjs-wasm.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"
