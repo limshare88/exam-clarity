@@ -694,6 +694,21 @@ function Workspace() {
                     <FeedbackBlock title="🧠 Logic" body={part.logic_feedback} />
                     <FeedbackBlock title="🔢 Sequencing" body={part.sequencing_feedback} />
                     <FeedbackBlock title="📐 Formulas & rules" body={part.formula_feedback} />
+                    {part.model_steps?.length > 0 && (
+                      <div className="rounded-2xl border-2 border-border bg-card p-4">
+                        <p className="font-bold">✅ The correct step order</p>
+                        <ol className="mt-2 space-y-3">
+                          {part.model_steps.map((s) => (
+                            <li key={s.step}>
+                              <p className="reading-text text-base font-semibold">
+                                Step {s.step}: {s.action}
+                              </p>
+                              {s.reason && <p className="reading-text mt-0.5 text-sm text-muted-foreground">{s.reason}</p>}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
                     {part.missing_steps?.length > 0 && (
                       <div className="rounded-2xl border-2 border-border bg-card p-4">
                         <p className="font-bold">➕ Steps to add next time</p>
@@ -713,6 +728,21 @@ function Workspace() {
                   <FeedbackBlock title="🧠 Logic" body={feedback.logic_feedback} />
                   <FeedbackBlock title="🔢 Sequencing" body={feedback.sequencing_feedback} />
                   <FeedbackBlock title="📐 Formulas & rules" body={feedback.formula_feedback} />
+                  {feedback.model_steps?.length > 0 && (
+                    <div className="rounded-2xl border-2 border-border bg-cream p-4">
+                      <p className="font-bold">✅ The correct step order</p>
+                      <ol className="mt-2 space-y-3">
+                        {feedback.model_steps.map((s) => (
+                          <li key={s.step}>
+                            <p className="reading-text text-base font-semibold">
+                              Step {s.step}: {s.action}
+                            </p>
+                            {s.reason && <p className="reading-text mt-0.5 text-sm text-muted-foreground">{s.reason}</p>}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
                   {feedback.missing_steps?.length > 0 && (
                     <div className="rounded-2xl border-2 border-border bg-cream p-4">
                       <p className="font-bold">➕ Steps to add next time</p>

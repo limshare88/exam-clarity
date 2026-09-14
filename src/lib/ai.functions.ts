@@ -403,6 +403,12 @@ export const lookupWord = createServerFn({ method: "POST" })
     return record;
   });
 
+/** One step of the ideal, correctly-sequenced strategy for a question — shown to the
+ * student as "Step 1", "Step 2" etc. regardless of what she wrote, each with the reason
+ * that step belongs at that point (so she can see not just what to do, but why it comes
+ * where it does). */
+export type ModelStep = { step: number; action: string; reason: string };
+
 export type CoachPartFeedback = {
   label: string;
   score: number;
@@ -410,6 +416,7 @@ export type CoachPartFeedback = {
   sequencing_feedback: string;
   formula_feedback: string;
   missing_steps: string[];
+  model_steps: ModelStep[];
 };
 
 export const coachStrategy = createServerFn({ method: "POST" })
@@ -506,6 +513,10 @@ Treat the named board as binding. Do not blend in conventions from another board
 You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether the correct formulas, rules or techniques were named.
 SUBJECT RULE FOR THIS ANSWER: ${subjectStrategyRule(subject)} Treat that omission as fully expected and never deduct for it, never mention it as missing, and never ask her to supply it.
 You completely ignore missing numerical working, missing final answers, missing paragraph descriptions, missing raw data calculations, missing essays, missing text transformations, spelling and grammar. Never ask for calculations.
+
+MODEL STEPS — for every sub-question, work out the ideal, correctly-sequenced strategy for reaching full marks, independent of what she wrote. Number it Step 1, Step 2, Step 3 in the order they should be carried out. For EACH step give: the action itself in one short plain sentence, and a separate one-sentence reason explaining why that action has to happen at that point in the sequence (what it depends on, what it feeds into, or which mark it secures) — never just restate the action as its own reason. Keep the whole sequence to the minimum steps a strong answer actually needs (usually 2-5) — do not pad it out.
+
+SEQUENCING FEEDBACK — compare her actual steps against the model steps above, in order. For every point where her sequence diverges (a step in the wrong position, a step missing entirely, or an extra/wrong step that doesn't belong), say so explicitly: name what she wrote there (or that nothing was there), say plainly why that placement is wrong, then say what the correct step at that point is and why it has to come there instead (tie this back to the same reason given in model_steps, in her own simplified terms). If her sequence already matches the model, say so plainly and specifically rather than something generic. This must read as a direct comparison, not a vague summary.
 ${
   schemeBrief
     ? `MANDATORY MARK SCHEME CALIBRATION. The official uploaded marking scheme for this paper is supplied at the end of the user message. It overrides your own expectations.
@@ -514,21 +525,38 @@ Before scoring, list to yourself the explicit marking points, threshold expectat
 - Score in proportion to how many of the scheme's marking points her plan would secure out of ${data.marks}.
 - In formula_feedback name the exact rules, formulas or approved keywords the scheme requires.
 - In missing_steps name the specific scheme marking points her plan would miss, in the scheme's own wording, simplified into short calm phrases.
+- Build model_steps so each step maps onto one of the scheme's marking points where possible.
 Never contradict the scheme and never invent marking points it does not contain.`
     : "Do not claim access to a live mark scheme. If the exact paper-specific scheme is unavailable, apply the named board's established public conventions conservatively."
 }
 
 ${
   multi
-    ? `This question has ${parts.length} separate sub-questions and she wrote a separate blueprint for each. Grade EVERY sub-question independently on its own merits: never let one part's quality change another part's judgement, and never merge them. A blank part scores 0 with a calm prompt about what its first step should have been.
-Reply as JSON with keys: part_feedback (array, one object per sub-question in the same order, each with label (copy the given label exactly), score (0-100 integer), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected for THAT part), missing_steps (array of short strings)), score (0-100 integer overall, the average across the parts), board_used, rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), struggle_tags (array of 1-4 short lowercase tags), encouragement (one warm short sentence about the whole question).`
-    : `Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (2 short sentences), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`
+    ? `This question has ${parts.length} separate sub-questions and she wrote a separate blueprint for each. Grade EVERY sub-question independently on its own merits: never let one part's quality change another part's judgement, and never merge them. A blank part scores 0 with a calm prompt about what its first step should have been, and model_steps must still be filled in for it.
+Reply as JSON with keys: part_feedback (array, one object per sub-question in the same order, each with label (copy the given label exactly), score (0-100 integer), logic_feedback (2 short sentences), sequencing_feedback (a direct step-by-step comparison as described above — as many sentences as needed, do not compress it to 2), formula_feedback (2 short sentences naming the formulas/rules expected for THAT part), missing_steps (array of short strings), model_steps (array of {step, action, reason} as described above, for THAT part)), score (0-100 integer overall, the average across the parts), board_used, rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), struggle_tags (array of 1-4 short lowercase tags), encouragement (one warm short sentence about the whole question).`
+    : `Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (a direct step-by-step comparison as described above — as many sentences as needed, do not compress it to 2), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), model_steps (array of {step, action, reason} as described above), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`
 }`,
       (multi
         ? `Whole question (${data.marks} marks total):\n${data.questionText}\n\n${partsBrief}`
         : partsBrief) + schemeBrief,
 
     );
+
+    // Validates the AI's model_steps into a clean, numbered array — re-numbering
+    // defensively (1, 2, 3...) rather than trusting the model's own step numbers, since a
+    // gap or duplicate there would otherwise render as a broken "Step 1, Step 1, Step 3".
+    const readModelSteps = (value: unknown): ModelStep[] => {
+      if (!Array.isArray(value)) return [];
+      return value
+        .map((entry, i): ModelStep | null => {
+          if (!entry || typeof entry !== "object") return null;
+          const item = entry as Record<string, unknown>;
+          const action = String(item["action"] ?? "").trim();
+          if (!action) return null;
+          return { step: i + 1, action, reason: String(item["reason"] ?? "").trim() };
+        })
+        .filter((s): s is ModelStep => s !== null);
+    };
 
     const rawParts = Array.isArray(out["part_feedback"]) ? out["part_feedback"] : [];
     const part_feedback: CoachPartFeedback[] = rawParts.flatMap((value, index): CoachPartFeedback[] => {
@@ -542,6 +570,7 @@ Reply as JSON with keys: part_feedback (array, one object per sub-question in th
           sequencing_feedback: String(item["sequencing_feedback"] ?? ""),
           formula_feedback: String(item["formula_feedback"] ?? ""),
           missing_steps: (item["missing_steps"] ?? []) as string[],
+          model_steps: readModelSteps(item["model_steps"]),
         },
       ];
     });
@@ -560,6 +589,7 @@ Reply as JSON with keys: part_feedback (array, one object per sub-question in th
       sequencing_feedback: String(out["sequencing_feedback"] ?? ""),
       formula_feedback: String(out["formula_feedback"] ?? ""),
       missing_steps: (out["missing_steps"] ?? []) as string[],
+      model_steps: readModelSteps(out["model_steps"]),
       struggle_tags: (out["struggle_tags"] ?? []) as string[],
       encouragement: String(out["encouragement"] ?? ""),
       part_feedback,
