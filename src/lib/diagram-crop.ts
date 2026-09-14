@@ -52,7 +52,12 @@ export async function cropAndUploadDiagram(
   box: DiagramBox,
   userId: string,
 ): Promise<string | null> {
-  const pad = 0.012;
+  // Small safety margin around the AI's estimated box: vision-based bounding-box
+  // estimates for photographs in particular are sometimes a little tight or shifted
+  // (e.g. clipping the top of a photo while including its caption), so a slightly
+  // larger pad than a purely cosmetic border helps absorb small misses without
+  // meaningfully affecting well-estimated boxes.
+  const pad = 0.025;
   const x = Math.max(0, (box.x - pad) * page.width);
   const y = Math.max(0, (box.y - pad) * page.height);
   const w = Math.min(page.width - x, (box.w + pad * 2) * page.width);
