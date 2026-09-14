@@ -243,16 +243,16 @@ function Admin() {
         // rather than assuming a single image per row.
         const diagramPages = result.questions.flatMap((q) => (q.diagrams.length ? [q.page] : []));
         const pages = diagramPages.length ? await renderPaperPages(file, diagramPages) : new Map();
-        const diagramsByQuestion = new Map<number, { label: string; url: string }[]>();
+        const diagramsByQuestion = new Map<number, { anchor: string; url: string }[]>();
         for (let i = 0; i < result.questions.length; i += 1) {
           const question = result.questions[i]!;
           if (!question.diagrams.length) continue;
           const canvas = pages.get(question.page);
           if (!canvas) continue;
-          const cropped: { label: string; url: string }[] = [];
+          const cropped: { anchor: string; url: string }[] = [];
           for (const diagram of question.diagrams) {
             const url = await cropAndUploadDiagram(canvas, diagram.box, uid);
-            if (url) cropped.push({ label: diagram.label, url });
+            if (url) cropped.push({ anchor: diagram.anchor, url });
           }
           if (cropped.length) diagramsByQuestion.set(i, cropped);
         }
@@ -273,7 +273,7 @@ function Admin() {
             // Kept for backward compatibility with older reads of this column; new
             // rendering uses `diagrams`. Falls back to the whole-question ("") diagram,
             // or the first one, so old code paths still show something.
-            image_url: diagrams.find((d) => !d.label)?.url ?? diagrams[0]?.url ?? null,
+            image_url: diagrams.find((d) => !d.anchor)?.url ?? diagrams[0]?.url ?? null,
             diagrams,
             paper_type: chosenPaper,
             exam_year: chosenYear,

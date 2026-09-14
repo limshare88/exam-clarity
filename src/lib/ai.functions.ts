@@ -69,10 +69,12 @@ const TONE =
 
 export type DiagramBox = { x: number; y: number; w: number; h: number };
 
-/** One printed diagram, tied to the sub-part it illustrates. `label` is the
- * sub-part's printed path, e.g. "(a)(i)" or "(b)" — or "" when the diagram
- * belongs to the question as a whole rather than one specific labelled part. */
-export type ExtractedDiagram = { label: string; box: DiagramBox };
+/** One printed diagram, tied to a nearby sub-part by a verbatim quote from the question
+ * text (not a structural label the AI would have to guess in our internal syntax — exam
+ * papers are too inconsistently formatted for that to match reliably). `anchor` is a short
+ * phrase copied word-for-word from question_text; matching it against each part's own
+ * text (client-side, against the same parser that renders the page) finds where it goes. */
+export type ExtractedDiagram = { anchor: string; box: DiagramBox };
 
 export type ExtractedExamQuestion = {
   question_number: string;
@@ -115,7 +117,7 @@ MULTIPLE CHOICE. When a question offers answer options (A, B, C, D, tick boxes, 
 
 STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
 
-STEP 5 — DIAGRAMS. A single question can have MORE THAN ONE printed diagram, chart, graph, table image, circuit, map or structural illustration — one per sub-part is common (e.g. an answer-options table next to part (a)(i), and a separate graph next to part (b)). Find every such visual printed with this question and list them ALL in "diagrams": an array of objects with exactly: label, x, y, w, h. "label" is the printed sub-part path the diagram sits next to and illustrates, exactly matching that sub-part's own label in question_text (e.g. "(a)(i)", "(b)"; use "" only when a diagram belongs to the question's main stem and is not next to any specific lettered/numbered sub-part). x, y, w, h are the tight rectangle around that one visual, as fractions of the full page, {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner — exclude surrounding body text from the box. Never merge two separate diagrams into one box. When there is no visual at all, diagrams must be an empty array.
+STEP 5 — DIAGRAMS. A single question can have MORE THAN ONE printed diagram, chart, graph, table image, circuit, map or structural illustration — one per sub-part is common (e.g. an answer-options table next to part (a)(i), and a separate graph next to part (b)). Find every such visual printed with this question and list them ALL in "diagrams": an array of objects with exactly: anchor, x, y, w, h. "anchor" is a phrase of 6 to 15 words copied VERBATIM, word-for-word, from the question_text you are writing for this question — specifically from the sentence of the sub-part this diagram sits next to and illustrates. Every word in "anchor" must appear in question_text exactly as printed there; never paraphrase, shorten, or invent it, and never copy words that are not part of this question's own question_text. Use anchor "" only when a diagram belongs to the whole question's opening stem and is not next to any one specific lettered/numbered sub-part. x, y, w, h are the tight rectangle around that one visual, as fractions of the full page, {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner — exclude surrounding body text from the box. Never merge two separate diagrams into one box. When there is no visual at all, diagrams must be an empty array.
 
 STEP 6 — PAGE AND PAPER. Set page to the 1-based page number the question is printed on (use 1 for a single screenshot). Read paper_type and exam_year from the printed cover or running header when visible; otherwise "" and null.
 
@@ -129,19 +131,19 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
 
     const frac = (value: unknown) => Math.min(1, Math.max(0, Number(value) || 0));
 
-    // Shared by both the normal and diagrams array: cap count and label length, drop
-    // implausible or page-sized rectangles, and never trust an AI-supplied label that
-    // isn't a short printed sub-part path.
+    // Shared by both the normal and salvage paths: cap count and anchor length, drop
+    // implausible or page-sized rectangles. The anchor's actual presence in question_text
+    // is verified client-side at render time (see practice.tsx) — this only bounds size.
     const readDiagrams = (value: unknown): ExtractedDiagram[] => {
       if (!Array.isArray(value)) return [];
       return value
         .flatMap((entry): ExtractedDiagram[] => {
           if (!entry || typeof entry !== "object") return [];
           const raw = entry as Record<string, unknown>;
-          const label = String(raw["label"] ?? "").trim().slice(0, 40);
+          const anchor = String(raw["anchor"] ?? "").trim().slice(0, 200);
           const box = { x: frac(raw["x"]), y: frac(raw["y"]), w: frac(raw["w"]), h: frac(raw["h"]) };
           if (box.w <= 0.04 || box.h <= 0.03 || box.w * box.h >= 0.9) return [];
-          return [{ label, box }];
+          return [{ anchor, box }];
         })
         .slice(0, 8);
     };

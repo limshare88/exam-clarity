@@ -49,10 +49,11 @@ export const Route = createFileRoute("/_authenticated/practice")({
 
 type Mode = "practice" | "challenge" | "reinforce";
 
-/** One printed diagram tied to the sub-part it illustrates. `label` matches a
- * QuestionPart's `path` (e.g. "(a)(i)", "(b)"), or "" for a diagram that
- * belongs to the question as a whole rather than one specific labelled part. */
-type QuestionDiagram = { label: string; url: string };
+/** One printed diagram, matched to the sub-part it illustrates by finding a verbatim
+ * quote (see `anchor`) inside that part's own text — not by a structural label, since
+ * asking the AI to reproduce our internal path syntax proved too unreliable across
+ * inconsistently-formatted exam papers. "" means it belongs to the whole question. */
+type QuestionDiagram = { anchor: string; url: string };
 
 type ActiveQuestion = {
   id: string | null;
@@ -78,8 +79,8 @@ type Deconstructed = {
 type Feedback = Awaited<ReturnType<typeof coachStrategy>>;
 
 /** Validates the `diagrams` jsonb column into typed entries. Falls back to the legacy
- * single `image_url` column (as one whole-question, ""-labelled diagram) for rows
- * saved before per-part diagrams existed. */
+ * single `image_url` column (as one whole-question diagram) for rows saved before
+ * per-part diagrams existed. */
 function normalizeDiagrams(raw: unknown, imageUrl: string | null): QuestionDiagram[] {
   const list = Array.isArray(raw)
     ? raw.flatMap((entry): QuestionDiagram[] => {
@@ -87,11 +88,11 @@ function normalizeDiagrams(raw: unknown, imageUrl: string | null): QuestionDiagr
         const item = entry as Record<string, unknown>;
         const url = typeof item["url"] === "string" ? item["url"] : "";
         if (!url) return [];
-        return [{ label: typeof item["label"] === "string" ? item["label"] : "", url }];
+        return [{ anchor: typeof item["anchor"] === "string" ? item["anchor"] : "", url }];
       })
     : [];
   if (list.length) return list;
-  return imageUrl ? [{ label: "", url: imageUrl }] : [];
+  return imageUrl ? [{ anchor: "", url: imageUrl }] : [];
 }
 
 function Workspace() {
@@ -281,17 +282,12 @@ function Workspace() {
     () => (active ? splitQuestionParts(active.question_text) : []),
     [active],
   );
-  // Groups this question's diagrams by the sub-part path they belong to, so each one
-  // renders next to the part it actually illustrates rather than all at the top.
-  const diagramsByLabel = useMemo(() => {
-    const map = new Map<string, QuestionDiagram[]>();
-    for (const diagram of active?.diagrams ?? []) {
-      const existing = map.get(diagram.label);
-      if (existing) existing.push(diagram);
-      else map.set(diagram.label, [diagram]);
-    }
-    return map;
-  }, [active]);
+  // Matches each diagram to the sub-part it illustrates by finding its anchor quote
+  // inside that part's own text — using the exact same parsed tree that renders the
+  // page, so a match can never point at a part that doesn't actually exist. A diagram
+  // with no anchor, or whose anchor isn't found anywhere, falls back to "" (shown once
+  // at the top of the question) rather than guessing wrong or disappearing.
+  const diagramsByPath = useMemo(() => matchDiagramsToParts(active?.diagrams ?? [], parts), [active, parts]);
   // Only the deepest actionable questions get their own blueprint box.
   const answerParts = useMemo(() => leafParts(parts), [parts]);
   const multiPart = answerParts.length > 1;
@@ -520,7 +516,7 @@ function Workspace() {
             </p>
             {/* Diagrams tied to a specific sub-part render inline next to that part below;
                 only whole-question ("") diagrams show here at the top. */}
-            {(diagramsByLabel.get("") ?? []).map((diagram, index) => (
+            {(diagramsByPath.get("") ?? []).map((diagram, index) => (
               <DiagramImage key={`${diagram.url}-${index}`} url={diagram.url} subject={active.subject} />
             ))}
             {active.schematic && <ExamSchematic diagram={active.schematic} subject={active.subject} />}
@@ -532,7 +528,7 @@ function Workspace() {
                     key={`${part.path}-${index}`}
                     part={part}
                     subject={active.subject}
-                    diagramsByLabel={diagramsByLabel}
+                    diagramsByPath={diagramsByPath}
                   />
                 ))}
               </div>
@@ -745,13 +741,52 @@ function Workspace() {
     </AppShell>
   );
 }
-// admin.tsx prepends "<question_number>. " onto question_text before saving, but the AI
-// labels diagrams using paths within its own question_text — which never includes that
-// leading number (see ai.functions.ts STEP 3). So a part path computed at practice time,
-// e.g. "1.(a)(i)", needs that leading number stripped before it can match a diagram
-// labelled "(a)(i)".
-function diagramLookupKey(path: string): string {
-  return path.replace(/^\d{1,2}[.)\]:-]?\s*/, "");
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/** Anchors shorter than this are too likely to appear by coincidence in the wrong part
+ * (or in several parts at once), so they're treated as "no reliable match" rather than
+ * risking a wrong placement. */
+const MIN_ANCHOR_LENGTH = 12;
+
+/** Matches each diagram to the sub-part whose own text contains its anchor quote, using
+ * the same parsed tree that renders the page — so a match is always to a part that
+ * genuinely exists with genuinely matching text, never a guessed structural label. Falls
+ * back to "" (rendered once at the top of the question) when a diagram has no anchor, the
+ * anchor is too short to trust, or it isn't found anywhere in this question's text. */
+function matchDiagramsToParts(diagrams: QuestionDiagram[], parts: QuestionPart[]): Map<string, QuestionDiagram[]> {
+  const flat: { path: string; depth: number; text: string }[] = [];
+  const walk = (node: QuestionPart) => {
+    if (node.text) flat.push({ path: node.path, depth: node.depth, text: normalizeForMatch(node.text) });
+    node.children.forEach(walk);
+  };
+  parts.forEach(walk);
+
+  const map = new Map<string, QuestionDiagram[]>();
+  const addTo = (path: string, diagram: QuestionDiagram) => {
+    const existing = map.get(path);
+    if (existing) existing.push(diagram);
+    else map.set(path, [diagram]);
+  };
+
+  for (const diagram of diagrams) {
+    const anchor = normalizeForMatch(diagram.anchor);
+    if (anchor.length < MIN_ANCHOR_LENGTH) {
+      addTo("", diagram);
+      continue;
+    }
+    // Several parts could coincidentally contain the same short phrase; prefer the most
+    // specific (deepest) match, since that's the part the diagram is actually printed next to.
+    let best: { path: string; depth: number } | null = null;
+    for (const part of flat) {
+      if (part.text.includes(anchor) && (!best || part.depth > best.depth)) {
+        best = { path: part.path, depth: part.depth };
+      }
+    }
+    addTo(best?.path ?? "", diagram);
+  }
+  return map;
 }
 
 function DiagramImage({ url, subject }: { url: string; subject: string }) {
@@ -791,16 +826,16 @@ function DiagramImage({ url, subject }: { url: string; subject: string }) {
 function PartBlock({
   part,
   subject,
-  diagramsByLabel,
+  diagramsByPath,
 }: {
   part: QuestionPart;
   subject: string;
-  diagramsByLabel: Map<string, QuestionDiagram[]>;
+  diagramsByPath: Map<string, QuestionDiagram[]>;
 }) {
   const nested = part.depth > 0;
   // The root stem's own diagrams (path "") are already shown at the top of the question,
   // so only look up diagrams here for parts with a real printed label.
-  const ownDiagrams = part.path ? (diagramsByLabel.get(diagramLookupKey(part.path)) ?? []) : [];
+  const ownDiagrams = part.path ? (diagramsByPath.get(part.path) ?? []) : [];
   return (
     <div
       className={
@@ -827,7 +862,7 @@ function PartBlock({
               key={`${child.path}-${index}`}
               part={child}
               subject={subject}
-              diagramsByLabel={diagramsByLabel}
+              diagramsByPath={diagramsByPath}
             />
           ))}
         </div>
