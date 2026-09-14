@@ -187,7 +187,7 @@ function Shop() {
                   {cat === "Mascots" ? (
                     <Mascot character={item.item_id} className="h-40 rounded-xl border" />
                   ) : cat === "Backgrounds" ? (
-                    <div className="h-24 w-full overflow-hidden rounded-xl border border-border">
+                    <div className="relative h-24 w-full overflow-hidden rounded-xl border border-border">
                       <BackgroundScene itemId={item.item_id} />
                     </div>
                   ) : HAS_SHOP_ICON(item.item_id) ? (
