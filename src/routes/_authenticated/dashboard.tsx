@@ -79,12 +79,12 @@ function Dashboard() {
   });
 
   const equipped = useMemo(() => {
-    const map: Record<string, string | null> = { Hats: null, Outfits: null, "Desk Toys": null, Wallpapers: null };
+    const map: Record<string, string | null> = { Hats: null, Outfits: null, "Desk Toys": null, Backgrounds: null };
     (inventory ?? [])
       .filter((i) => i.equipped)
       .forEach((i) => {
         const item = SHOP_ITEMS.find((s) => s.item_id === i.item_id);
-        if (item) map[item.category] = item.category === "Wallpapers" ? item.item_id : item.emoji;
+        if (item) map[item.category] = item.item_id;
       });
     return map;
   }, [inventory]);
@@ -150,7 +150,7 @@ function Dashboard() {
           hat={equipped["Hats"]}
           outfit={equipped["Outfits"]}
           toy={equipped["Desk Toys"]}
-          wallpaper={equipped["Wallpapers"]}
+          background={equipped["Backgrounds"]}
           mood="cheer"
         />
         <div className="flex gap-3">

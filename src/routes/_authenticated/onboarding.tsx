@@ -3,10 +3,12 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useProfile, useRefreshProfile } from "@/hooks/useProfile";
 import { SUBJECTS, EXAM_BOARDS, LEARNING_PROFILES } from "@/lib/subjects";
+import { Mascot } from "@/components/Mascot";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -37,6 +39,7 @@ function Onboarding() {
   const [age, setAge] = useState("");
   const [boards, setBoards] = useState<Record<string, string>>({});
   const [needs, setNeeds] = useState<string[]>([]);
+  const [mascot, setMascot] = useState<"mascot-chibi" | "mascot-chibi-boy">("mascot-chibi");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -44,6 +47,9 @@ function Onboarding() {
     setName(profile.name ?? "");
     setAge(profile.age ? String(profile.age) : "");
     setNeeds(profile.learning_profile ?? []);
+    if (profile.active_mascot === "mascot-chibi-boy" || profile.active_mascot === "mascot-chibi") {
+      setMascot(profile.active_mascot);
+    }
     const map: Record<string, string> = {};
     (profile.subjects ?? []).forEach((s) => (map[s.subject] = s.board));
     setBoards(map);
@@ -73,6 +79,7 @@ function Onboarding() {
         age: age ? Number(age) : null,
         subjects,
         learning_profile: needs,
+        active_mascot: mascot,
         onboarded: true,
       })
       .eq("user_id", auth.user!.id);
@@ -91,6 +98,34 @@ function Onboarding() {
             Three short steps. You can change all of this later in Settings.
           </p>
         </header>
+
+        <section className="surface-card space-y-4 p-6">
+          <h2 className="text-xl font-bold">Choose your companion</h2>
+          <p className="text-sm text-muted-foreground">
+            You can unlock more companions later in the toy shop with Pulse Coins.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {(
+              [
+                { id: "mascot-chibi" as const, label: "Chibi Girl" },
+                { id: "mascot-chibi-boy" as const, label: "Chibi Boy" },
+              ]
+            ).map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setMascot(option.id)}
+                className={cn(
+                  "flex flex-col items-center gap-2 rounded-2xl border-2 p-3 text-center transition",
+                  mascot === option.id ? "border-primary bg-primary/10 shadow-md" : "border-border bg-cream",
+                )}
+              >
+                <Mascot character={option.id} className="h-40 rounded-xl border pointer-events-none" />
+                <span className="text-base font-semibold">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <section className="surface-card space-y-4 p-6">
           <h2 className="text-xl font-bold">1. About you</h2>

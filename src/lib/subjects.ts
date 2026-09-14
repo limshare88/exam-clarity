@@ -32,6 +32,7 @@ export type SubjectBoard = { subject: string; board: string };
 
 export const SHOP_ITEMS = [
   { item_id: "mascot-chibi", item_name: "Mika, Chibi Learner", category: "Mascots", price: 0, emoji: "🌸" },
+  { item_id: "mascot-chibi-boy", item_name: "Leo, Chibi Learner", category: "Mascots", price: 0, emoji: "🌟" },
   { item_id: "mascot-long-ear", item_name: "Mallow, Long-Eared Friend", category: "Mascots", price: 180, emoji: "🌿" },
   { item_id: "mascot-robot", item_name: "Pip, Helper Robot", category: "Mascots", price: 240, emoji: "⚡" },
   { item_id: "hat-star", item_name: "Star Beret", category: "Hats", price: 40, emoji: "🎩" },
@@ -43,10 +44,10 @@ export const SHOP_ITEMS = [
   { item_id: "toy-cat", item_name: "Desk Cat", category: "Desk Toys", price: 50, emoji: "🐱" },
   { item_id: "toy-plant", item_name: "Tiny Plant", category: "Desk Toys", price: 35, emoji: "🪴" },
   { item_id: "toy-lamp", item_name: "Glow Lamp", category: "Desk Toys", price: 70, emoji: "💡" },
-  { item_id: "bg-mint", item_name: "Mint Study Room", category: "Wallpapers", price: 90, emoji: "🌿" },
-  { item_id: "bg-sunset", item_name: "Cream Sunset", category: "Wallpapers", price: 90, emoji: "🌅" },
-  { item_id: "bg-night", item_name: "Lavender Night", category: "Wallpapers", price: 130, emoji: "🌙" },
-];
+  { item_id: "bg-study", item_name: "Cozy Study Room", category: "Backgrounds", price: 90, emoji: "📚" },
+  { item_id: "bg-night", item_name: "Starry Night Bedroom", category: "Backgrounds", price: 130, emoji: "🌙" },
+  { item_id: "bg-classroom", item_name: "Bright Classroom", category: "Backgrounds", price: 110, emoji: "🏫" },
+] as const;
 
 export type ShopItem = (typeof SHOP_ITEMS)[number];
 

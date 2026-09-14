@@ -1,43 +1,43 @@
 import { cn } from "@/lib/utils";
 import chibiGirl from "@/assets/mascot-chibi-girl.png";
+import chibiBoy from "@/assets/mascot-chibi-boy.svg";
 import longEar from "@/assets/mascot-long-ear.png";
 import helperRobot from "@/assets/mascot-helper-robot.png";
+import { ShopIcon } from "@/components/ShopIcons";
+import { BackgroundScene } from "@/components/BackgroundScenes";
 
 type MascotProps = {
+  /** Item id of the equipped hat, e.g. "hat-star". */
   hat?: string | null | undefined;
+  /** Item id of the equipped outfit, e.g. "fit-hoodie". */
   outfit?: string | null | undefined;
+  /** Item id of the equipped desk toy, e.g. "toy-cat". */
   toy?: string | null | undefined;
-  wallpaper?: string | null | undefined;
+  /** Item id of the equipped background scene, e.g. "bg-study". */
+  background?: string | null | undefined;
   mood?: "happy" | "cheer" | "calm";
   character?: string | null | undefined;
   className?: string;
 };
 
-const WALLPAPERS: Record<string, string> = {
-  "bg-mint": "bg-mint",
-  "bg-sunset": "bg-cream",
-  "bg-night": "bg-lavender",
-};
-
 const CHARACTERS: Record<string, { src: string; name: string }> = {
   "mascot-chibi": { src: chibiGirl, name: "Mika, the chibi learner" },
+  "mascot-chibi-boy": { src: chibiBoy, name: "Leo, the chibi learner" },
   "mascot-long-ear": { src: longEar, name: "Mallow, the long-eared companion" },
   "mascot-robot": { src: helperRobot, name: "Pip, the helper robot" },
 };
 const DEFAULT_CHARACTER = { src: chibiGirl, name: "Mika, the chibi learner" };
 
-export function Mascot({ hat, outfit, toy, wallpaper, character, className }: MascotProps) {
+export function Mascot({ hat, outfit, toy, background, character, className }: MascotProps) {
   const selected = CHARACTERS[character ?? ""] ?? DEFAULT_CHARACTER;
   return (
     <div
       className={cn(
-        "relative flex h-72 w-full items-end justify-center overflow-hidden rounded-3xl border-2 border-border",
-        WALLPAPERS[wallpaper ?? ""] ?? "bg-sky",
+        "relative flex h-72 w-full items-end justify-center overflow-hidden rounded-3xl border-2 border-border bg-sky",
         className,
       )}
     >
-      <div className="absolute left-5 top-5 text-2xl" aria-hidden>✦</div>
-      <div className="absolute right-6 top-7 text-xl" aria-hidden>☁</div>
+      <BackgroundScene itemId={background} />
 
       <div className="relative h-[17rem] w-64" aria-label={selected.name} role="img">
         <img
@@ -47,18 +47,25 @@ export function Mascot({ hat, outfit, toy, wallpaper, character, className }: Ma
           height={1024}
           className="absolute inset-0 h-full w-full object-contain drop-shadow-lg"
         />
+        {/* Equipped items render as the actual shop icon, positioned directly on the
+            character, so what's equipped is what she sees worn — not a disconnected
+            floating sticker. */}
         {outfit && (
-          <div className="absolute left-1/2 top-[55%] flex h-20 w-24 -translate-x-1/2 items-center justify-center rounded-[42%] border-2 border-border bg-secondary/90 text-4xl shadow-sm" aria-label="Equipped outfit">
-            {outfit}
-          </div>
+          <ShopIcon
+            itemId={outfit}
+            className="absolute left-1/2 top-[54%] h-20 w-20 -translate-x-1/2 drop-shadow-md"
+          />
         )}
-        {hat && <div className="absolute left-1/2 top-1 -translate-x-1/2 text-6xl drop-shadow-md" aria-label="Equipped hat">{hat}</div>}
+        {hat && (
+          <ShopIcon
+            itemId={hat}
+            className="absolute left-1/2 top-[-6%] h-24 w-24 -translate-x-1/2 drop-shadow-md"
+          />
+        )}
       </div>
 
       {toy && (
-        <div className="absolute bottom-5 right-6 text-5xl drop-shadow-md" aria-label="Equipped desk toy">
-          {toy}
-        </div>
+        <ShopIcon itemId={toy} className="absolute bottom-5 right-6 h-14 w-14 drop-shadow-md" />
       )}
     </div>
   );

@@ -5,10 +5,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useProfile, useRefreshProfile } from "@/hooks/useProfile";
 import { AppShell } from "@/components/AppShell";
 import { Mascot } from "@/components/Mascot";
+import { ShopIcon, HAS_SHOP_ICON } from "@/components/ShopIcons";
+import { BackgroundScene } from "@/components/BackgroundScenes";
 import { SHOP_ITEMS } from "@/lib/subjects";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { Lock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/shop")({
   head: () => ({
@@ -16,7 +20,7 @@ export const Route = createFileRoute("/_authenticated/shop")({
       { title: "Toy shop — ExamPulse" },
       {
         name: "description",
-        content: "Spend your Pulse Coins on hats, outfits, desk toys and room wallpapers.",
+        content: "Spend your Pulse Coins on hats, outfits, desk toys and room backgrounds.",
       },
       { property: "og:title", content: "Toy shop — ExamPulse" },
       { property: "og:description", content: "Dress up your mascot with earned Pulse Coins." },
@@ -25,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/shop")({
   component: Shop,
 });
 
-const CATEGORIES = ["Mascots", "Hats", "Outfits", "Desk Toys", "Wallpapers"] as const;
+const CATEGORIES = ["Mascots", "Hats", "Outfits", "Desk Toys", "Backgrounds"] as const;
 
 function Shop() {
   const { data: profile } = useProfile();
@@ -42,17 +46,21 @@ function Shop() {
     },
   });
 
-  const owned = useMemo(
-    () => new Set(["mascot-chibi", ...(inventory ?? []).map((i) => i.item_id)]),
-    [inventory],
-  );
+  // Every free (price 0) item — currently both starter mascots — is owned from the start,
+  // not just a single hardcoded one, so whichever she picked at onboarding is available
+  // here immediately without needing a purchase record.
+  const owned = useMemo(() => {
+    const free = SHOP_ITEMS.filter((i) => i.price === 0).map((i) => i.item_id);
+    return new Set([...free, ...(inventory ?? []).map((i) => i.item_id)]);
+  }, [inventory]);
+
   const equipped = useMemo(() => {
     const map: Record<string, string | null> = {};
     (inventory ?? [])
       .filter((i) => i.equipped)
       .forEach((i) => {
         const item = SHOP_ITEMS.find((s) => s.item_id === i.item_id);
-        if (item) map[item.category] = item.category === "Wallpapers" || item.category === "Mascots" ? item.item_id : item.emoji;
+        if (item) map[item.category] = item.item_id;
       });
     return map;
   }, [inventory]);
@@ -126,7 +134,7 @@ function Shop() {
           hat={equipped["Hats"]}
           outfit={equipped["Outfits"]}
           toy={equipped["Desk Toys"]}
-          wallpaper={equipped["Wallpapers"]}
+          background={equipped["Backgrounds"]}
         />
       </section>
 
@@ -145,16 +153,38 @@ function Shop() {
             {SHOP_ITEMS.filter((i) => i.category === cat).map((item) => {
               const isOwned = owned.has(item.item_id);
               const isEquipped =
-                cat === "Mascots"
-                  ? profile?.active_mascot === item.item_id
-                  : equipped[cat] === (cat === "Wallpapers" ? item.item_id : item.emoji);
+                cat === "Mascots" ? profile?.active_mascot === item.item_id : equipped[cat] === item.item_id;
               return (
                 <div
                   key={item.item_id}
-                  className="flex flex-col items-center gap-2 rounded-2xl border-2 border-border bg-cream p-4 text-center"
+                  className={cn(
+                    "relative flex flex-col items-center gap-2 rounded-2xl border-2 p-4 text-center transition",
+                    isEquipped ? "border-primary bg-primary/10 shadow-md" : "border-border bg-cream",
+                    !isOwned && "opacity-80",
+                  )}
                 >
+                  {!isOwned && (
+                    <span
+                      className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-card/90 text-muted-foreground shadow-sm"
+                      aria-label="Locked"
+                    >
+                      <Lock className="h-4 w-4" />
+                    </span>
+                  )}
+                  {isEquipped && (
+                    <span className="absolute left-2 top-2 rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">
+                      Active
+                    </span>
+                  )}
+
                   {cat === "Mascots" ? (
                     <Mascot character={item.item_id} className="h-40 rounded-xl border" />
+                  ) : cat === "Backgrounds" ? (
+                    <div className="h-24 w-full overflow-hidden rounded-xl border border-border">
+                      <BackgroundScene itemId={item.item_id} />
+                    </div>
+                  ) : HAS_SHOP_ICON(item.item_id) ? (
+                    <ShopIcon itemId={item.item_id} className="h-16 w-16" />
                   ) : (
                     <span className="text-4xl">{item.emoji}</span>
                   )}
