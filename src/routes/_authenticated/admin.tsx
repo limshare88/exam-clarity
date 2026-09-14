@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,7 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { extractExamQuestions, extractMarkScheme, MARK_SCHEME_NAME_PATTERN } from "@/lib/ai.functions";
-import { cropAndUploadDiagram, renderPaperPages } from "@/lib/diagram-crop";
+import { cropAndUploadDiagram, renderPaperPages, type DiagramBox } from "@/lib/diagram-crop";
 import { FileSearch, Trash2 } from "lucide-react";
 
 
@@ -81,6 +82,72 @@ function Admin() {
 
   const [pending, setPending] = useState<ResetKind | null>(null);
   const [confirmText, setConfirmText] = useState("");
+
+  // Fixing a diagram whose auto-detected crop came out wrong (e.g. cropped blank, or the
+  // wrong region of the page): pick a paper, see which of its questions have diagrams,
+  // then re-draw the box for one directly over the real PDF page.
+  type StoredDiagram = { anchor: string; page?: number; url: string };
+  const [fixPaper, setFixPaper] = useState<Paper | null>(null);
+  const [recrop, setRecrop] = useState<{
+    questionId: string;
+    diagramIndex: number;
+    diagram: StoredDiagram;
+    filePath: string;
+    fallbackPage: number;
+  } | null>(null);
+
+  const { data: diagramQuestions } = useQuery({
+    queryKey: ["diagram-questions", fixPaper?.file_path],
+    queryFn: async () => {
+      if (!fixPaper) return [];
+      const { data } = await supabase
+        .from("exam_questions")
+        .select("id, question_text, diagrams, metadata")
+        .eq("file_path", fixPaper.file_path)
+        .order("created_at", { ascending: true });
+      return (data ?? [])
+        .map((row) => ({
+          id: row.id as string,
+          question_text: row.question_text as string,
+          diagrams: (Array.isArray(row.diagrams) ? row.diagrams : []) as StoredDiagram[],
+          page: Number((row.metadata as Record<string, unknown> | null)?.["page"] ?? 1) || 1,
+        }))
+        .filter((row) => row.diagrams.length > 0);
+    },
+    enabled: !!fixPaper,
+  });
+
+  async function saveRecrop(box: DiagramBox, canvas: HTMLCanvasElement) {
+    if (!recrop) return;
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth.user?.id;
+    if (!uid) { toast.error("Please sign in again."); return; }
+
+    const url = await cropAndUploadDiagram(canvas, box, uid);
+    if (!url) { toast.error("Could not save that crop — try drawing a slightly larger box."); return; }
+
+    const { data: current, error: readError } = await supabase
+      .from("exam_questions")
+      .select("diagrams")
+      .eq("id", recrop.questionId)
+      .single();
+    if (readError || !current) { toast.error("Could not find that question anymore."); return; }
+
+    const diagrams = (Array.isArray(current.diagrams) ? current.diagrams : []) as StoredDiagram[];
+    if (!diagrams[recrop.diagramIndex]) { toast.error("That diagram no longer exists."); return; }
+    diagrams[recrop.diagramIndex] = { ...diagrams[recrop.diagramIndex]!, url };
+
+    const { error: updateError } = await supabase
+      .from("exam_questions")
+      .update({ diagrams })
+      .eq("id", recrop.questionId);
+    if (updateError) { toast.error(updateError.message); return; }
+
+    qc.invalidateQueries({ queryKey: ["diagram-questions", fixPaper?.file_path] });
+    qc.invalidateQueries({ queryKey: ["questions"] });
+    setRecrop(null);
+    toast.success("Diagram updated.");
+  }
 
   const { data: questions } = useQuery({
     queryKey: ["questions"],
@@ -245,16 +312,16 @@ function Admin() {
         // question's opening page, which would crop it from the wrong page entirely.
         const diagramPages = result.questions.flatMap((q) => q.diagrams.map((d) => d.page));
         const pages = diagramPages.length ? await renderPaperPages(file, diagramPages) : new Map();
-        const diagramsByQuestion = new Map<number, { anchor: string; url: string }[]>();
+        const diagramsByQuestion = new Map<number, { anchor: string; page: number; url: string }[]>();
         for (let i = 0; i < result.questions.length; i += 1) {
           const question = result.questions[i]!;
           if (!question.diagrams.length) continue;
-          const cropped: { anchor: string; url: string }[] = [];
+          const cropped: { anchor: string; page: number; url: string }[] = [];
           for (const diagram of question.diagrams) {
             const canvas = pages.get(diagram.page);
             if (!canvas) continue;
             const url = await cropAndUploadDiagram(canvas, diagram.box, uid);
-            if (url) cropped.push({ anchor: diagram.anchor, url });
+            if (url) cropped.push({ anchor: diagram.anchor, page: diagram.page, url });
           }
           if (cropped.length) diagramsByQuestion.set(i, cropped);
         }
@@ -519,14 +586,23 @@ function Admin() {
                 {format(new Date(paper.created_at), "d MMM yyyy")}
               </p>
             </div>
-            <Button
-              variant="secondary"
-              onClick={() => deletePaper(paper)}
-              className="tap-lg shrink-0 rounded-2xl border-2 border-border text-sm"
-            >
-              <Trash2 className="mr-1 h-4 w-4" />
-              Delete Paper
-            </Button>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setFixPaper(paper)}
+                className="tap-lg rounded-2xl border-2 border-border text-sm"
+              >
+                🖼️ Fix diagrams
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => deletePaper(paper)}
+                className="tap-lg rounded-2xl border-2 border-border text-sm"
+              >
+                <Trash2 className="mr-1 h-4 w-4" />
+                Delete Paper
+              </Button>
+            </div>
           </div>
         ))}
         {!papers?.length && <p className="text-muted-foreground">No papers uploaded yet.</p>}
@@ -682,7 +758,220 @@ function Admin() {
           </Button>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!fixPaper} onOpenChange={(o) => !o && setFixPaper(null)}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto rounded-3xl border-2 border-border">
+          <DialogHeader>
+            <DialogTitle>🖼️ Fix diagrams — {fixPaper?.original_name}</DialogTitle>
+            <DialogDescription>
+              If a diagram cropped wrong or blank, redraw its box directly over the real page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(diagramQuestions ?? []).map((q) =>
+              q.diagrams.map((diagram, index) => (
+                <div
+                  key={`${q.id}-${index}`}
+                  className="flex items-center gap-3 rounded-2xl border-2 border-border bg-cream p-3"
+                >
+                  <img
+                    src={diagram.url}
+                    alt="Current crop"
+                    className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover"
+                  />
+                  <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                    {diagram.anchor || q.question_text.slice(0, 60)}
+                  </p>
+                  <Button
+                    variant="secondary"
+                    className="tap-lg shrink-0 rounded-2xl border-2 border-border text-sm"
+                    onClick={() =>
+                      setRecrop({
+                        questionId: q.id,
+                        diagramIndex: index,
+                        diagram,
+                        filePath: fixPaper!.file_path,
+                        fallbackPage: q.page,
+                      })
+                    }
+                  >
+                    Recrop
+                  </Button>
+                </div>
+              )),
+            )}
+            {diagramQuestions && diagramQuestions.length === 0 && (
+              <p className="text-muted-foreground">No diagrams recorded for this paper.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!recrop} onOpenChange={(o) => !o && setRecrop(null)}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto rounded-3xl border-2 border-border">
+          <DialogHeader>
+            <DialogTitle>Redraw the crop</DialogTitle>
+            <DialogDescription>
+              Drag over the picture to select the area to keep, then save.
+            </DialogDescription>
+          </DialogHeader>
+          {recrop && (
+            <DiagramRecropEditor
+              key={`${recrop.questionId}-${recrop.diagramIndex}`}
+              filePath={recrop.filePath}
+              initialPage={recrop.diagram.page ?? recrop.fallbackPage}
+              onSave={saveRecrop}
+              onCancel={() => setRecrop(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </AppShell>
+  );
+}
+
+function DiagramRecropEditor({
+  filePath,
+  initialPage,
+  onSave,
+  onCancel,
+}: {
+  filePath: string;
+  initialPage: number;
+  onSave: (box: DiagramBox, canvas: HTMLCanvasElement) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [page, setPage] = useState(Math.max(1, initialPage));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
+  const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(null);
+  // The selection box, kept in DISPLAY pixel coordinates while dragging; converted to
+  // page-fraction coordinates (resolution-independent, matching how boxes are stored
+  // everywhere else) only at save time.
+  const [box, setBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setCanvas(null);
+    setImgSrc(null);
+    setBox(null);
+    (async () => {
+      const { data, error } = await supabase.storage.from("exam-uploads").download(filePath);
+      if (cancelled) return;
+      if (error || !data) {
+        toast.error("Could not load the original paper.");
+        setLoading(false);
+        return;
+      }
+      const file = new File([data], "paper.pdf", { type: data.type || "application/pdf" });
+      const pages = await renderPaperPages(file, [page]);
+      if (cancelled) return;
+      const rendered = pages.get(page);
+      if (!rendered) {
+        toast.error(`Page ${page} could not be found in this paper.`);
+        setLoading(false);
+        return;
+      }
+      setCanvas(rendered);
+      const maxWidth = 640;
+      const scale = Math.min(1, maxWidth / rendered.width);
+      setDisplaySize({ width: Math.round(rendered.width * scale), height: Math.round(rendered.height * scale) });
+      setImgSrc(rendered.toDataURL("image/png"));
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filePath, page]);
+
+  function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    dragStart.current = { x, y };
+    setBox({ x, y, w: 0, h: 0 });
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragStart.current || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
+    const y = Math.min(Math.max(e.clientY - rect.top, 0), rect.height);
+    const start = dragStart.current;
+    setBox({ x: Math.min(start.x, x), y: Math.min(start.y, y), w: Math.abs(x - start.x), h: Math.abs(y - start.y) });
+  }
+
+  function handlePointerUp() {
+    dragStart.current = null;
+  }
+
+  async function handleSave() {
+    if (!canvas || !box || !displaySize || box.w < 8 || box.h < 8) {
+      toast.error("Drag out a box over the picture first.");
+      return;
+    }
+    setSaving(true);
+    const fraction: DiagramBox = {
+      x: box.x / displaySize.width,
+      y: box.y / displaySize.height,
+      w: box.w / displaySize.width,
+      h: box.h / displaySize.height,
+    };
+    await onSave(fraction, canvas);
+    setSaving(false);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Label className="text-sm">Page</Label>
+        <Input
+          type="number"
+          min={1}
+          value={page}
+          onChange={(e) => setPage(Math.max(1, Number(e.target.value) || 1))}
+          className="w-20 rounded-xl border-2 border-border text-sm"
+        />
+        <p className="text-xs text-muted-foreground">Change this if the picture isn't on the page shown below.</p>
+      </div>
+
+      {loading && <p className="text-muted-foreground">Loading the page…</p>}
+
+      {!loading && imgSrc && displaySize && (
+        <div
+          ref={containerRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          className="relative touch-none select-none overflow-hidden rounded-2xl border-2 border-border"
+          style={{ width: displaySize.width, height: displaySize.height }}
+        >
+          <img src={imgSrc} alt="Exam page" draggable={false} className="pointer-events-none block h-full w-full" />
+          {box && (
+            <div
+              className="absolute border-2 border-primary bg-primary/20"
+              style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+            />
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onCancel} className="tap-lg rounded-2xl border-2 border-border">
+          Cancel
+        </Button>
+        <Button onClick={handleSave} disabled={saving || !box} className="tap-lg rounded-2xl">
+          {saving ? "Saving…" : "Save crop"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
