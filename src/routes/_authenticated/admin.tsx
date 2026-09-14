@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -64,7 +64,6 @@ function Admin() {
   const subjects = profile?.subjects ?? [];
   const [subject, setSubject] = useState("");
   const [questionText, setQuestionText] = useState("");
-  const [marks, setMarks] = useState("3");
   const [paperType, setPaperType] = useState("");
   const [examYear, setExamYear] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -381,7 +380,6 @@ function Admin() {
       subject,
       board,
       question_text: questionText.trim(),
-      marks: Number(marks) || 1,
       source_type: "manual",
       file_path: filePath,
       paper_type: paperType.trim() || null,
@@ -499,32 +497,17 @@ function Admin() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="marks" className="text-base">
-              Marks
-            </Label>
-            <Input
-              id="marks"
-              type="number"
-              min={1}
-              value={marks}
-              onChange={(e) => setMarks(e.target.value)}
-              className="tap-lg rounded-2xl border-2 text-base"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="file" className="text-base">
-              Screenshot or PDF
-            </Label>
-            <Input
-              id="file"
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="rounded-2xl border-2 py-3 text-sm"
-            />
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="file" className="text-base">
+            Screenshot or PDF
+          </Label>
+          <Input
+            id="file"
+            type="file"
+            accept="image/*,application/pdf"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="rounded-2xl border-2 py-3 text-sm"
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -544,16 +527,7 @@ function Admin() {
             <Label htmlFor="year" className="text-base">
               Exam year
             </Label>
-            <Input
-              id="year"
-              type="number"
-              min={1990}
-              max={2100}
-              value={examYear}
-              onChange={(e) => setExamYear(e.target.value)}
-              placeholder="2025"
-              className="tap-lg rounded-2xl border-2 text-base"
-            />
+            <YearPicker value={examYear} onChange={setExamYear} />
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
@@ -827,6 +801,52 @@ function Admin() {
         </DialogContent>
       </Dialog>
     </AppShell>
+  );
+}
+
+/** A year field that can be typed into directly or picked from a dropdown of recent
+ * years — some past papers are older than any reasonable dropdown range, so free typing
+ * always stays available rather than restricting to only listed years. */
+function YearPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const thisYear = new Date().getFullYear();
+  // Next year (for freshly-published specimen papers) down to 20 years back.
+  const years = Array.from({ length: 22 }, (_, i) => thisYear + 1 - i);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <Input
+          id="year"
+          type="text"
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          onFocus={() => setOpen(true)}
+          placeholder="2025"
+          className="tap-lg rounded-2xl border-2 text-base"
+        />
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="max-h-60 w-40 overflow-y-auto rounded-2xl border-2 border-border p-1"
+      >
+        {years.map((y) => (
+          <button
+            key={y}
+            type="button"
+            onClick={() => {
+              onChange(String(y));
+              setOpen(false);
+            }}
+            className="block w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-cream"
+          >
+            {y}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 

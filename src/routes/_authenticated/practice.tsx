@@ -213,6 +213,11 @@ function Workspace() {
       const pool = filteredBank;
       if (!pool.length) {
         setActive(null);
+        if (!bank?.length) {
+          toast.error(`No questions yet for ${subject}. Upload a paper for this subject in the parent panel first.`);
+        } else {
+          toast.error("No questions match that paper/year filter. Try 'All papers' or 'All years'.");
+        }
         return;
       }
       // Randomized, non-repeating rotation: reshuffle only once every question has been seen.
@@ -243,7 +248,7 @@ function Workspace() {
       setSecondsLeft((profile?.timer_seconds ?? 60) * Math.max(nextMarks, 1));
     }
     else setSecondsLeft(null);
-  }, [subject, mode, filteredBank, boardFor, profile, reinforce, resetQuestionState]);
+  }, [subject, mode, filteredBank, bank, boardFor, profile, reinforce, resetQuestionState]);
 
 
 
