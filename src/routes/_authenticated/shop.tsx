@@ -83,10 +83,11 @@ function Shop() {
       price: item.price,
     });
     if (error) { toast.error(error.message); return; }
-    await supabase
+    const { error: coinsError } = await supabase
       .from("user_profiles")
       .update({ coins: (profile?.coins ?? 0) - item.price })
       .eq("user_id", uid);
+    if (coinsError) { toast.error(coinsError.message); return; }
     refreshProfile();
     qc.invalidateQueries({ queryKey: ["inventory"] });
     toast.success(`${item.item_name} is yours!`);
@@ -105,16 +106,22 @@ function Shop() {
       if (error) { toast.error(error.message); return; }
       refreshProfile();
     }
-    await supabase
+    // These two updates were previously unchecked — a failure here (e.g. a database
+    // constraint, or an RLS rule rejecting the write) used to fail completely silently,
+    // showing no error at all while also not actually equipping anything. Surfacing both
+    // lets a real failure show up as a clear message instead of "nothing happened."
+    const { error: unequipError } = await supabase
       .from("gamification_inventory")
       .update({ equipped: false })
       .eq("user_id", uid)
       .eq("category", category);
-    await supabase
+    if (unequipError) { toast.error(unequipError.message); return; }
+    const { error: equipError } = await supabase
       .from("gamification_inventory")
       .update({ equipped: true })
       .eq("user_id", uid)
       .eq("item_id", itemId);
+    if (equipError) { toast.error(equipError.message); return; }
     qc.invalidateQueries({ queryKey: ["inventory"] });
   }
 
