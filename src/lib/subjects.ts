@@ -52,6 +52,18 @@ export const SHOP_ITEMS = [
   { item_id: "mika-accessory-satchel", item_name: "Study Satchel", category: "Accessories", price: 65, emoji: "📚", avatar_id: "mascot-chibi", starter: false },
   { item_id: "leo-accessory-headphones", item_name: "Focus Headphones", category: "Accessories", price: 40, emoji: "🎧", avatar_id: "mascot-chibi-boy", starter: false },
   { item_id: "leo-accessory-backpack", item_name: "Explorer Backpack", category: "Accessories", price: 65, emoji: "🎒", avatar_id: "mascot-chibi-boy", starter: false },
+  { item_id: "hat-star", item_name: "Star Beret", category: "Hats", price: 40, emoji: "🎩" },
+  { item_id: "hat-bunny", item_name: "Bunny Ears", category: "Hats", price: 60, emoji: "🐰" },
+  { item_id: "hat-crown", item_name: "Pastel Crown", category: "Hats", price: 120, emoji: "👑" },
+  { item_id: "fit-hoodie", item_name: "Mint Hoodie", category: "Outfits", price: 80, emoji: "🧥" },
+  { item_id: "fit-sailor", item_name: "Lavender Uniform", category: "Outfits", price: 110, emoji: "👗" },
+  { item_id: "fit-lab", item_name: "Science Lab Coat", category: "Outfits", price: 150, emoji: "🥼" },
+  { item_id: "toy-cat", item_name: "Desk Cat", category: "Desk Toys", price: 50, emoji: "🐱" },
+  { item_id: "toy-plant", item_name: "Tiny Plant", category: "Desk Toys", price: 35, emoji: "🪴" },
+  { item_id: "toy-lamp", item_name: "Glow Lamp", category: "Desk Toys", price: 70, emoji: "💡" },
+  { item_id: "bg-study", item_name: "Cozy Study Room", category: "Backgrounds", price: 90, emoji: "📚" },
+  { item_id: "bg-night", item_name: "Starry Night Bedroom", category: "Backgrounds", price: 130, emoji: "🌙" },
+  { item_id: "bg-classroom", item_name: "Bright Classroom", category: "Backgrounds", price: 110, emoji: "🏫" },
 ] as const;
 
 export type ShopItem = (typeof SHOP_ITEMS)[number];
