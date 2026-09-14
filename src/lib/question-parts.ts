@@ -221,20 +221,35 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
   // ("1 .......... 2 .........."), and findMarkers can't tell a bare "1"/"2" like that
   // apart from a genuine question number just from the token alone. Each question's own
   // text should only ever contain ONE real top-level number (the question itself, e.g.
-  // "7." or "1."), so treat any LATER "number"-kind marker at the outermost (unindented)
-  // level as one of these printed blanks rather than a second real question start —
-  // otherwise it fractures the rest of the question into a bogus new top-level sibling
-  // (e.g. "1.(a)(i)" then "2.(b)" instead of "1.(a)(i)" then "1.(b)"). A number marker
-  // that's genuinely indented deeper still nests normally (e.g. calculation steps printed
-  // under a lettered part) — this only suppresses a second marker sitting at the very top.
+  // "7." or "1."), so a LATER "number"-kind marker at the outermost (unindented) level is
+  // never a second real question start. It's one of two things instead:
+  //  - a genuinely blank answer line (nothing but dots/underscores follows it) — this
+  //    contributes nothing, so it's dropped entirely, rather than fracturing the rest of
+  //    the question into a bogus new top-level sibling (e.g. "1.(a)(i)" then "2.(b)"
+  //    instead of "1.(a)(i)" then "1.(b)").
+  //  - a genuine numbered sub-heading with real text after it, used to structure a
+  //    multi-part answer ("1 Effect of temperature" / "2 Effect of source of starch") —
+  //    this is kept, but forced to nest under whatever part is currently open rather than
+  //    closing back out to a new top-level root, since it's clearly still part of that
+  //    same open sub-question, not a second main question.
+  // A number marker that's genuinely indented deeper is unaffected either way — it still
+  // nests normally (e.g. calculation steps printed under a lettered part).
   let sawTopLevelNumber = false;
-  const meaningfulMarkers = markers.filter((marker) => {
-    if (marker.kind !== "number" || marker.indent > 0) return true;
+  const meaningfulMarkers: (Marker & { forceChild?: boolean })[] = [];
+  markers.forEach((marker, i) => {
+    if (marker.kind !== "number" || marker.indent > 0) {
+      meaningfulMarkers.push(marker);
+      return;
+    }
     if (!sawTopLevelNumber) {
       sawTopLevelNumber = true;
-      return true;
+      meaningfulMarkers.push(marker);
+      return;
     }
-    return false;
+    const next = markers[i + 1]?.index ?? text.length;
+    const rawBody = text.slice(marker.end, next).replace(/\(\d{1,2}\)/g, "");
+    const hasRealText = rawBody.replace(/[\s._\-–—·…]/g, "").length >= 3;
+    if (hasRealText) meaningfulMarkers.push({ ...marker, forceChild: true });
   });
   if (meaningfulMarkers.length < 2) {
     return [{ label: "", path: "", depth: 0, text: text.trim(), children: [] }];
@@ -250,6 +265,29 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
   meaningfulMarkers.forEach((marker, i) => {
     const next = meaningfulMarkers[i + 1]?.index ?? text.length;
     const body = text.slice(marker.end, next).replace(/^[\s).:\]-]+/, "").trim();
+
+    // A forceChild marker (a numbered sub-heading following an already-used top-level
+    // number, see above) always nests under whatever is currently open — skip the normal
+    // pop logic entirely, since popping could otherwise send it straight back to root.
+    // Crucially, it's never pushed onto `stack`: leaving the stack untouched means a run of
+    // several consecutive forceChild markers all read the same (currently open) parent off
+    // the top of the stack and land as siblings of each other, and the next REAL marker
+    // afterwards still pops correctly relative to whatever was genuinely open before the
+    // forceChild run started — not relative to a forceChild node it was never meant to nest
+    // under.
+    if (marker.forceChild) {
+      const parent = stack[stack.length - 1];
+      const siblings = parent ? parent.node.children : roots;
+      const node: QuestionPart = {
+        label: marker.label,
+        path: `${parent?.node.path ?? ""}${marker.label}`,
+        depth: stack.length,
+        text: body,
+        children: [],
+      };
+      siblings.push(node);
+      return;
+    }
 
     // Pop to the level this marker belongs to. Indentation is the primary signal, exactly
     // as printed: less-indented always closes the open (deeper) level, more-indented is
