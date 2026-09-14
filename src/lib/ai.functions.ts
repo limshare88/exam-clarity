@@ -80,12 +80,21 @@ export type DiagramBox = { x: number; y: number; w: number; h: number };
  * the wrong page's canvas entirely and shows unrelated content. */
 export type ExtractedDiagram = { anchor: string; page: number; box: DiagramBox };
 
+/** One printed per-sub-part mark allocation, anchored the same way diagrams are: a
+ * verbatim quote from that specific sub-part's own text, rather than a structural label
+ * the AI would have to reproduce in our internal syntax. Boards often print marks for
+ * the whole question as one total with no per-part breakdown at all -- in that case this
+ * array is simply empty for that question, which is a real fact about the paper, not a
+ * gap to guess at. */
+export type ExtractedPartMarks = { anchor: string; marks: number };
+
 export type ExtractedExamQuestion = {
   question_number: string;
   question_text: string;
   marks: number;
   page: number;
   diagrams: ExtractedDiagram[];
+  part_marks: ExtractedPartMarks[];
 };
 
 export const extractExamQuestions = createServerFn({ method: "POST" })
@@ -109,24 +118,26 @@ export const extractExamQuestions = createServerFn({ method: "POST" })
 
     const out = await callAI(
       `You are a strict exam-paper extraction engine for ${data.board || "the selected exam board"} ${data.subject} papers.
-Return JSON with keys: paper_type (string like "Paper 1" or "" if not printed), exam_year (4-digit integer or null), and questions — an array of objects with exactly: question_number, question_text, marks, page, diagrams.
+Return JSON with keys: paper_type (string like "Paper 1" or "" if not printed), exam_year (4-digit integer or null), and questions — an array of objects with exactly: question_number, question_text, marks, page, diagrams, part_marks.
 
 STEP 1 — LOCATE MARKERS. Scan the document for printed numbered problem markers only: "Question 1", "Q2", "3.", "4)", "1(a)", "2 (b) (ii)". A block of text qualifies ONLY if it starts at such a marker. Text with no numbered marker is NEVER a question.
 
 STEP 2 — DELETE FRONT MATTER. Completely discard, and never merge into any question: cover pages, candidate/centre name boxes, exam guidelines, "Information for candidates", "Instructions to candidates", time allowed, materials required, safety instructions, calculator/equipment notices, formula sheets and data sheets, regulations, advice, contents pages, section headings, page numbers, running headers and footers, "Turn over", "End of questions", blank page notices, examiner-use tables, copyright and publisher lines.
 
-STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number and keep each subpart's printed label, e.g. "(a) ... (b) ...", exactly where it appears so the text can be broken into blocks later. Preserve formulas, units, values, command words, options and diagram/table references. Invent nothing.
+STEP 3 — EXTRACT. For each surviving marker, output only the actual problem text a student must answer, starting at the marker's own wording (exclude the marker label itself from question_text). Keep subparts under their parent number and keep each subpart's printed label, e.g. "(a) ... (b) ...", exactly where it appears so the text can be broken into blocks later. Preserve formulas, units, values, command words, options and diagram/table references. A printed mark allocation like "(1)" or "[3 marks]" is metadata about the part, not part of the problem text a student answers — exclude it from question_text (it is reported separately in part_marks below), the same way the marker label itself is excluded. Invent nothing else.
 
 MULTIPLE CHOICE. When a question offers answer options (A, B, C, D, tick boxes, bubbles or "which of the following"), it is ONE question, never several. Keep the stem and every option inside a single question_text, each option on its own line written as "A. ...", "B. ...". Never turn options into separate questions and never relabel them as sub-parts.
 
-STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
+STEP 4 — MARKS, WHOLE QUESTION. Read the printed allocation for the question as a whole, such as [4 marks], (3), (3 marks), [Total: 6] — sum every printed subpart figure if only subpart figures are printed and no overall total is shown. Store that integer in "marks". Use 1 only when no allocation is printed anywhere for this question.
+
+STEP 4B — MARKS, PER SUB-PART. Separately, ALSO report each individual sub-part's own printed mark allocation (e.g. the "(1)" printed after part (a), the "(2)" printed after part (b)(ii)) in "part_marks": an array of objects with exactly: anchor, marks. "anchor" is a phrase of 6 to 15 words copied VERBATIM, word-for-word, from the END of the specific sub-part's own question_text that this mark allocation belongs to — the last few words of that sub-part's text, right before where its mark allocation is printed. Every word in "anchor" must appear in question_text exactly as printed there. "marks" is the integer printed for that one sub-part. Only include a sub-part here when a board genuinely prints a separate figure for it; when a board only prints one total for the whole question with no per-part breakdown anywhere, part_marks must be an empty array — never invent a split of the total. A question with no sub-parts at all (the whole question is one block) also gets an empty part_marks array; its one mark figure is already captured in "marks".
 
 STEP 5 — DIAGRAMS. A single question can have MORE THAN ONE printed diagram, chart, graph, table image, circuit, map or structural illustration — one per sub-part is common (e.g. an answer-options table next to part (a)(i), and a separate graph next to part (b)). A question can also span more than one printed page, so its diagrams do not all have to be on the question's own opening page. Find every such visual printed with this question, on ANY page it spans, and list them ALL in "diagrams": an array of objects with exactly: anchor, page, x, y, w, h. "anchor" is a phrase of 6 to 15 words copied VERBATIM, word-for-word, from the question_text you are writing for this question — specifically from the sentence of the sub-part this diagram sits next to and illustrates. Every word in "anchor" must appear in question_text exactly as printed there; never paraphrase, shorten, or invent it, and never copy words that are not part of this question's own question_text. Use anchor "" only when a diagram belongs to the whole question's opening stem and is not next to any one specific lettered/numbered sub-part. "page" is the 1-based page THIS SPECIFIC diagram is actually printed on — check carefully, because it is often a different page from where the question starts if the question continues onto a later page. x, y, w, h are the tight rectangle around that one visual, as fractions of that diagram's own page: {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner. For a PHOTOGRAPH specifically, measure the box from the true top edge of the image itself, not from a caption or credit line printed below it (e.g. "© Photographer / Agency") — that credit line sits BELOW the photo, so a box that starts near the credit line and only barely reaches upward will cut off the photo almost entirely; the box must contain the whole photo, and the credit line if present is just the small bottom edge of that box, not most of it. Exclude surrounding body text from the box. Never merge two separate diagrams into one box. When there is no visual at all, diagrams must be an empty array.
 
 STEP 6 — PAGE AND PAPER. Set page to the 1-based page number the question is printed on (use 1 for a single screenshot). Read paper_type and exam_year from the printed cover or running header when visible; otherwise "" and null.
 
 Reject any candidate that is an instruction, notice, heading, or general guidance even if a number appears near it. Return an empty questions array if no genuine numbered questions are visible.`,
-      `Find every numbered problem marker in this ${data.subject} paper for ${data.board}, extract only those problems with their marks, note the page and every diagram rectangle (there can be more than one per question), and report the paper type and exam year. Ignore all front matter and instructions. Output valid JSON only.`,
+      `Find every numbered problem marker in this ${data.subject} paper for ${data.board}, extract only those problems with their marks (both the whole-question total and any per-sub-part figures actually printed), note the page and every diagram rectangle (there can be more than one per question), and report the paper type and exam year. Ignore all front matter and instructions. Output valid JSON only.`,
       { mimeType: data.mimeType, data: btoa(binary) },
     );
 
@@ -156,6 +167,23 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
         .slice(0, 8);
     };
 
+    // Mirrors readDiagrams: the anchor's actual presence in question_text is verified
+    // client-side at render time (see practice.tsx), this only bounds shape and size.
+    const readPartMarks = (value: unknown): ExtractedPartMarks[] => {
+      if (!Array.isArray(value)) return [];
+      return value
+        .flatMap((entry): ExtractedPartMarks[] => {
+          if (!entry || typeof entry !== "object") return [];
+          const raw = entry as Record<string, unknown>;
+          const anchor = String(raw["anchor"] ?? "").trim().slice(0, 200);
+          if (!anchor) return [];
+          const marks = Math.round(Number(raw["marks"]));
+          if (!Number.isFinite(marks) || marks < 1 || marks > 100) return [];
+          return [{ anchor, marks }];
+        })
+        .slice(0, 20);
+    };
+
     const candidates = Array.isArray(out["questions"]) ? out["questions"] : [];
     const questions = candidates.flatMap((value): ExtractedExamQuestion[] => {
       if (!value || typeof value !== "object") return [];
@@ -177,6 +205,7 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
           marks,
           page,
           diagrams: readDiagrams(item["diagrams"], page),
+          part_marks: readPartMarks(item["part_marks"]),
         },
       ];
     });
@@ -195,6 +224,7 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
             marks: Math.max(1, Math.min(100, Math.round(Number(item["marks"] ?? 1)) || 1)),
             page: Math.max(1, Math.round(Number(item["page"] ?? 1)) || 1),
             diagrams: [],
+            part_marks: readPartMarks(item["part_marks"]),
           },
         ];
       });

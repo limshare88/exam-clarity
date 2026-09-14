@@ -55,6 +55,11 @@ type Mode = "practice" | "challenge" | "reinforce";
  * inconsistently-formatted exam papers. "" means it belongs to the whole question. */
 type QuestionDiagram = { anchor: string; url: string };
 
+/** One printed per-sub-part mark allocation, matched to its sub-part the same way
+ * diagrams are — a verbatim anchor quote, not a structural label. Empty for a question
+ * whose board only prints one total with no per-part breakdown. */
+type QuestionPartMark = { anchor: string; marks: number };
+
 type ActiveQuestion = {
   id: string | null;
   subject: string;
@@ -63,6 +68,7 @@ type ActiveQuestion = {
   marks: number;
   image_url: string | null;
   diagrams: QuestionDiagram[];
+  partMarks: QuestionPartMark[];
   paper_type: string | null;
   exam_year: number | null;
   schematic: ExamSchematicData | null;
@@ -93,6 +99,22 @@ function normalizeDiagrams(raw: unknown, imageUrl: string | null): QuestionDiagr
     : [];
   if (list.length) return list;
   return imageUrl ? [{ anchor: "", url: imageUrl }] : [];
+}
+
+/** Validates the `part_marks` jsonb column into typed entries. Rows saved before this
+ * column existed simply have no rows for it (column default is '[]'), which is a real
+ * fact -- those questions' per-part marks were discarded at extraction time and aren't
+ * recoverable without re-uploading. */
+function normalizePartMarks(raw: unknown): QuestionPartMark[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry): QuestionPartMark[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as Record<string, unknown>;
+    const anchor = typeof item["anchor"] === "string" ? item["anchor"] : "";
+    const marks = Number(item["marks"]);
+    if (!anchor || !Number.isFinite(marks) || marks <= 0) return [];
+    return [{ anchor, marks }];
+  });
 }
 
 function Workspace() {
@@ -130,7 +152,7 @@ function Workspace() {
       seen.current.clear();
       const { data } = await supabase
         .from("exam_questions")
-        .select("id, subject, board, question_text, marks, image_url, diagrams, paper_type, exam_year")
+        .select("id, subject, board, question_text, marks, image_url, diagrams, part_marks, paper_type, exam_year")
         .eq("subject", subject)
         .order("created_at", { ascending: false })
         .limit(200);
@@ -199,6 +221,7 @@ function Workspace() {
           marks: res.marks,
           image_url: null,
           diagrams: [],
+          partMarks: [],
           paper_type: null,
           exam_year: null,
           schematic: res.schematic,
@@ -236,6 +259,7 @@ function Workspace() {
         marks: pick.marks,
         image_url: pick.image_url ?? null,
         diagrams: normalizeDiagrams(pick.diagrams, pick.image_url ?? null),
+        partMarks: normalizePartMarks(pick.part_marks),
         paper_type: pick.paper_type ?? null,
         exam_year: pick.exam_year ?? null,
         schematic: null,
@@ -297,16 +321,26 @@ function Workspace() {
   const answerParts = useMemo(() => leafParts(parts), [parts]);
   const multiPart = answerParts.length > 1;
 
+  const partMarksByPath = useMemo(
+    () => matchPartMarksToParts(active?.partMarks ?? [], parts),
+    [active, parts],
+  );
+
   // Marks per part, for the "how many steps does this need" gauge next to each blueprint
-  // box. Only ever shows a figure that was actually printed for that specific sub-part
-  // (parsed in leafParts) -- a made-up even split of the question's total looked exactly
-  // as confident as a real printed number but frequently didn't match the paper at all,
-  // which is worse than showing nothing. Many boards only total the whole question rather
-  // than breaking marks down per sub-part, and that's simply not recoverable client-side:
-  // a part with no printed figure gets no badge at all.
+  // box. The structured, anchor-matched figure (extracted straight from the paper's own
+  // per-part allocation, see part_marks) is the reliable source and is used whenever
+  // present. leafParts' own text-regex parse is kept only as a secondary fallback for
+  // older rows uploaded before part_marks existed. Never fabricated: a part with neither
+  // gets no badge at all, since many boards only total the whole question with no
+  // per-part breakdown printed anywhere.
   const partMarks = useMemo(
-    () => answerParts.map((p) => (p.marks != null ? { marks: p.marks } : null)),
-    [answerParts],
+    () =>
+      answerParts.map((p) => {
+        const structured = partMarksByPath.get(p.label);
+        const figure = structured ?? p.marks;
+        return figure != null ? { marks: figure } : null;
+      }),
+    [answerParts, partMarksByPath],
   );
 
 
@@ -842,6 +876,34 @@ function matchDiagramsToParts(diagrams: QuestionDiagram[], parts: QuestionPart[]
       }
     }
     addTo(best?.path ?? "", diagram);
+  }
+  return map;
+}
+
+/** Matches each printed per-part mark allocation to the sub-part whose own text contains
+ * its anchor quote — same reliable approach as matchDiagramsToParts. Unlike diagrams, a
+ * mark figure always belongs to one specific labelled part, never the question as a
+ * whole, so an anchor that's too short to trust or isn't found anywhere is simply
+ * dropped rather than falling back to "". */
+function matchPartMarksToParts(partMarks: QuestionPartMark[], parts: QuestionPart[]): Map<string, number> {
+  const flat: { path: string; depth: number; text: string }[] = [];
+  const walk = (node: QuestionPart) => {
+    if (node.text) flat.push({ path: node.path, depth: node.depth, text: normalizeForMatch(node.text) });
+    node.children.forEach(walk);
+  };
+  parts.forEach(walk);
+
+  const map = new Map<string, number>();
+  for (const pm of partMarks) {
+    const anchor = normalizeForMatch(pm.anchor);
+    if (anchor.length < MIN_ANCHOR_LENGTH) continue;
+    let best: { path: string; depth: number } | null = null;
+    for (const part of flat) {
+      if (part.text.includes(anchor) && (!best || part.depth > best.depth)) {
+        best = { path: part.path, depth: part.depth };
+      }
+    }
+    if (best) map.set(best.path, pm.marks);
   }
   return map;
 }

@@ -343,6 +343,7 @@ function Admin() {
             // or the first one, so old code paths still show something.
             image_url: diagrams.find((d) => !d.anchor)?.url ?? diagrams[0]?.url ?? null,
             diagrams,
+            part_marks: question.part_marks,
             paper_type: chosenPaper,
             exam_year: chosenYear,
             metadata: {

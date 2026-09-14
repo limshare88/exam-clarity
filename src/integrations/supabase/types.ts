@@ -26,6 +26,7 @@ export type Database = {
           marks: number
           metadata: Json
           paper_type: string | null
+          part_marks: Json
           question_text: string
           source_type: string
           subject: string
@@ -43,6 +44,7 @@ export type Database = {
           marks?: number
           metadata?: Json
           paper_type?: string | null
+          part_marks?: Json
           question_text: string
           source_type?: string
           subject: string
@@ -60,6 +62,7 @@ export type Database = {
           marks?: number
           metadata?: Json
           paper_type?: string | null
+          part_marks?: Json
           question_text?: string
           source_type?: string
           subject?: string
