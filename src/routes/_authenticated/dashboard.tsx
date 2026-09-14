@@ -73,7 +73,7 @@ function Dashboard() {
     queryFn: async () => {
       const { data } = await supabase
         .from("gamification_inventory")
-        .select("item_id, category, equipped");
+        .select("item_id, category, equipped, avatar_id");
       return data ?? [];
     },
   });
@@ -81,13 +81,13 @@ function Dashboard() {
   const equipped = useMemo(() => {
     const map: Record<string, string | null> = { Hats: null, Outfits: null, "Desk Toys": null, Backgrounds: null };
     (inventory ?? [])
-      .filter((i) => i.equipped)
+      .filter((i) => i.equipped && (!i.avatar_id || i.avatar_id === profile?.active_mascot))
       .forEach((i) => {
         const item = SHOP_ITEMS.find((s) => s.item_id === i.item_id);
         if (item) map[item.category] = item.item_id;
       });
     return map;
-  }, [inventory]);
+  }, [inventory, profile?.active_mascot]);
 
   const chartData = useMemo(() => {
     const byDay = new Map<string, { marks: number; secs: number }>();
@@ -149,6 +149,8 @@ function Dashboard() {
           character={profile?.active_mascot}
           hat={equipped["Hats"]}
           outfit={equipped["Outfits"]}
+          hairstyle={equipped["Hairstyles"]}
+          accessory={equipped["Accessories"]}
           toy={equipped["Desk Toys"]}
           background={equipped["Backgrounds"]}
           mood="cheer"
@@ -159,7 +161,7 @@ function Dashboard() {
           </Link>
           <Link to="/shop" className="flex-1">
             <Button variant="secondary" className="tap-lg w-full rounded-2xl border-2 border-border text-base">
-              Toy shop
+              Closet & Shop
             </Button>
           </Link>
         </div>

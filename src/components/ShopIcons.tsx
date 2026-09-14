@@ -176,6 +176,48 @@ function GlowLamp(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+type WearableKind = "dress" | "jacket" | "coat" | "hair" | "clips" | "bag" | "headphones";
+
+function PremiumWearable({ kind, tone, accent, ...props }: SVGProps<SVGSVGElement> & { kind: WearableKind; tone: string; accent: string }) {
+  const id = `wear-${kind}-${tone.replace(/[^a-z0-9]/gi, "")}`;
+  return (
+    <Sticker {...props}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0.8" y2="1">
+          <stop offset="0%" stopColor={accent} />
+          <stop offset="48%" stopColor={tone} />
+          <stop offset="100%" stopColor={tone} stopOpacity="0.72" />
+        </linearGradient>
+      </defs>
+      {(kind === "dress" || kind === "jacket" || kind === "coat") && (
+        <g>
+          <path d="M50 14 C34 14 28 23 27 38 L20 79 C29 84 39 87 50 87 C61 87 71 84 80 79 L73 38 C72 23 66 14 50 14Z" fill={`url(#${id})`} stroke={accent} strokeWidth="2" />
+          {kind === "dress" && <path d="M34 50 L22 82 Q50 94 78 82 L66 50Z" fill={`url(#${id})`} />}
+          {kind === "jacket" && <path d="M50 20 V82 M31 35 L18 67 M69 35 L82 67" fill="none" stroke={accent} strokeWidth="5" strokeLinecap="round" />}
+          {kind === "coat" && <path d="M38 18 L50 38 L62 18 M50 38 V84" fill="none" stroke="#f8fbff" strokeWidth="5" strokeLinecap="round" />}
+          <path d="M34 23 Q50 34 66 23" fill="none" stroke="#ffffff" strokeOpacity="0.72" strokeWidth="4" strokeLinecap="round" />
+          <circle cx="50" cy="51" r="3" fill={accent} />
+          <circle cx="50" cy="63" r="3" fill={accent} />
+        </g>
+      )}
+      {kind === "hair" && (
+        <g fill={`url(#${id})`} stroke={tone} strokeWidth="2">
+          <path d="M18 62 Q12 18 50 10 Q88 18 82 62 Q72 38 62 31 Q49 45 22 46Z" />
+          <path d="M24 44 Q15 72 28 91 Q39 70 38 48Z" />
+          <path d="M76 44 Q85 72 72 91 Q61 70 62 48Z" />
+          <path d="M29 34 Q44 14 70 25" fill="none" stroke={accent} strokeWidth="5" strokeLinecap="round" />
+        </g>
+      )}
+      {kind === "clips" && <g fill={`url(#${id})`}><path d="M28 55 l5 10 11 1-8 8 2 11-10-5-10 5 2-11-8-8 11-1Z" /><path d="M72 55 l5 10 11 1-8 8 2 11-10-5-10 5 2-11-8-8 11-1Z" /></g>}
+      {kind === "bag" && <g><rect x="22" y="32" width="56" height="52" rx="14" fill={`url(#${id})`} stroke={accent} strokeWidth="3" /><path d="M35 35 Q50 11 65 35" fill="none" stroke={accent} strokeWidth="6" /><path d="M35 58 H65" stroke="#ffffff" strokeOpacity="0.75" strokeWidth="4" strokeLinecap="round" /></g>}
+      {kind === "headphones" && <g fill="none" stroke={`url(#${id})`} strokeLinecap="round"><path d="M22 58 Q22 16 50 16 Q78 16 78 58" strokeWidth="10" /><rect x="13" y="51" width="20" height="33" rx="9" fill={tone} stroke={accent} strokeWidth="3" /><rect x="67" y="51" width="20" height="33" rx="9" fill={tone} stroke={accent} strokeWidth="3" /></g>}
+    </Sticker>
+  );
+}
+
+const wearable = (kind: WearableKind, tone: string, accent: string) =>
+  (props: SVGProps<SVGSVGElement>) => <PremiumWearable {...props} kind={kind} tone={tone} accent={accent} />;
+
 const ICONS: Record<string, (props: SVGProps<SVGSVGElement>) => React.ReactElement> = {
   "hat-star": StarBeret,
   "hat-bunny": BunnyEars,
@@ -186,6 +228,22 @@ const ICONS: Record<string, (props: SVGProps<SVGSVGElement>) => React.ReactEleme
   "toy-cat": DeskCat,
   "toy-plant": TinyPlant,
   "toy-lamp": GlowLamp,
+  "mika-outfit-cloud": wearable("dress", "#9cd9ef", "#fff4a8"),
+  "mika-outfit-sailor": wearable("dress", "#b6a2e7", "#fff7ff"),
+  "leo-outfit-sky": wearable("jacket", "#73bce4", "#e9fbff"),
+  "leo-outfit-varsity": wearable("jacket", "#72c6a5", "#f5fff9"),
+  "mika-outfit-starlight": wearable("dress", "#df83b8", "#ffe37a"),
+  "mika-outfit-lab": wearable("coat", "#e8f3fa", "#8ac7dc"),
+  "leo-outfit-cosmic": wearable("jacket", "#665fb8", "#89d8ef"),
+  "leo-outfit-lab": wearable("coat", "#e8f3fa", "#67b5d2"),
+  "mika-hair-braids": wearable("hair", "#70442f", "#d79573"),
+  "mika-hair-bob": wearable("hair", "#57405e", "#a68bb0"),
+  "leo-hair-swoop": wearable("hair", "#815039", "#d79a72"),
+  "leo-hair-curls": wearable("hair", "#5c463c", "#b58b74"),
+  "mika-accessory-stars": wearable("clips", "#ef9dbd", "#ffe377"),
+  "mika-accessory-satchel": wearable("bag", "#bd7f58", "#74472f"),
+  "leo-accessory-headphones": wearable("headphones", "#67b9d5", "#376f92"),
+  "leo-accessory-backpack": wearable("bag", "#6dad93", "#376d5d"),
 };
 
 /** Renders the glossy sticker icon for a shop item id, or null if this item (e.g. a

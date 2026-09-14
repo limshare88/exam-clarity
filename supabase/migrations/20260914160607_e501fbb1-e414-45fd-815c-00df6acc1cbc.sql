@@ -1,0 +1,1 @@
+ALTER FUNCTION public.unlock_and_equip_closet_item(TEXT) SECURITY INVOKER;
