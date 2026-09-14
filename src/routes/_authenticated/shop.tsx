@@ -117,9 +117,9 @@ function Shop() {
       <section className="grid gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(17rem,.9fr)]">
         <Mascot
           character={activeAvatar}
-          outfit={equipped.Outfits}
-          hairstyle={equipped.Hairstyles}
-          accessory={equipped.Accessories}
+          outfit={equipped["Outfits"]}
+          hairstyle={equipped["Hairstyles"]}
+          accessory={equipped["Accessories"]}
           className="h-[23rem] rounded-2xl md:h-[30rem]"
         />
         <div className="flex flex-col justify-center gap-3">

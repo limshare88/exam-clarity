@@ -149,6 +149,8 @@ function Dashboard() {
           character={profile?.active_mascot}
           hat={equipped["Hats"]}
           outfit={equipped["Outfits"]}
+          hairstyle={equipped["Hairstyles"]}
+          accessory={equipped["Accessories"]}
           toy={equipped["Desk Toys"]}
           background={equipped["Backgrounds"]}
           mood="cheer"
@@ -159,7 +161,7 @@ function Dashboard() {
           </Link>
           <Link to="/shop" className="flex-1">
             <Button variant="secondary" className="tap-lg w-full rounded-2xl border-2 border-border text-base">
-              Toy shop
+              Closet & Shop
             </Button>
           </Link>
         </div>
