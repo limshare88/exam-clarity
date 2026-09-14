@@ -73,6 +73,7 @@ export type Database = {
       }
       gamification_inventory: {
         Row: {
+          avatar_id: string | null
           category: string
           created_at: string
           equipped: boolean
@@ -83,6 +84,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          avatar_id?: string | null
           category: string
           created_at?: string
           equipped?: boolean
@@ -93,6 +95,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          avatar_id?: string | null
           category?: string
           created_at?: string
           equipped?: boolean
@@ -297,7 +300,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      unlock_and_equip_closet_item: {
+        Args: { p_item_id: string }
+        Returns: {
+          avatar_id: string
+          category: string
+          coins: number
+          item_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
