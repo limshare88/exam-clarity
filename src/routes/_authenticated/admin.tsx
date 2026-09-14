@@ -515,13 +515,7 @@ function Admin() {
             <Label htmlFor="paper" className="text-base">
               Paper
             </Label>
-            <Input
-              id="paper"
-              value={paperType}
-              onChange={(e) => setPaperType(e.target.value)}
-              placeholder="Paper 1"
-              className="tap-lg rounded-2xl border-2 text-base"
-            />
+            <PaperPicker value={paperType} onChange={setPaperType} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="year" className="text-base">
@@ -801,6 +795,48 @@ function Admin() {
         </DialogContent>
       </Dialog>
     </AppShell>
+  );
+}
+
+/** A paper field that can be typed into directly or picked from a dropdown of the
+ * standard "Paper N" options — free typing stays available for anything that doesn't
+ * fit that pattern (e.g. a named unit or a board that labels papers differently). */
+function PaperPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const options = Array.from({ length: 7 }, (_, i) => `Paper ${i + 1}`);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <Input
+          id="paper"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setOpen(true)}
+          placeholder="Paper 1"
+          className="tap-lg rounded-2xl border-2 text-base"
+        />
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="max-h-60 w-40 overflow-y-auto rounded-2xl border-2 border-border p-1"
+      >
+        {options.map((o) => (
+          <button
+            key={o}
+            type="button"
+            onClick={() => {
+              onChange(o);
+              setOpen(false);
+            }}
+            className="block w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-cream"
+          >
+            {o}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
