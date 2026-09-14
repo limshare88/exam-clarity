@@ -297,6 +297,21 @@ function Workspace() {
   const answerParts = useMemo(() => leafParts(parts), [parts]);
   const multiPart = answerParts.length > 1;
 
+  // Marks per part, for the "how many steps does this need" gauge next to each blueprint
+  // box. Printed sub-part allocations (parsed in leafParts) are used as-is; any part with
+  // no printed figure of its own (common when a board only totals marks for the whole
+  // question) instead gets an even share of whatever's left of the question's total —
+  // an estimate, not a printed fact, so it's shown with a "~" to say so.
+  const partMarks = useMemo(() => {
+    const known: (number | null)[] = answerParts.map((p) => p.marks);
+    const knownSum = known.reduce((sum: number, m) => sum + (m ?? 0), 0);
+    const missing = known.filter((m) => m == null).length;
+    if (!missing) return known.map((m) => ({ marks: m ?? 1, exact: true }));
+    const remaining = Math.max((active?.marks ?? 0) - knownSum, missing);
+    const share = Math.max(1, Math.round(remaining / missing));
+    return known.map((m) => (m == null ? { marks: share, exact: false } : { marks: m, exact: true }));
+  }, [answerParts, active?.marks]);
+
 
   const voiceNote =
     "Step 1: I read the command word and underline what it asks for. " +
@@ -606,9 +621,22 @@ function Workspace() {
             </div>
 
             {multiPart ? (
-              answerParts.map((part) => (
+              answerParts.map((part, index) => (
                 <div key={part.label} className="space-y-3 rounded-2xl border-2 border-border bg-cream p-4">
-                  <p className="text-lg font-bold text-primary">{part.label}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-lg font-bold text-primary">{part.label}</p>
+                    <span
+                      className="rounded-full border-2 border-border bg-card px-2 py-0.5 text-xs font-bold text-muted-foreground"
+                      title={
+                        partMarks[index]?.exact
+                          ? "Marks printed for this part"
+                          : "Estimated — this board only prints a total for the whole question"
+                      }
+                    >
+                      {partMarks[index]?.exact ? "" : "~"}
+                      {partMarks[index]?.marks} marks
+                    </span>
+                  </div>
                   {part.context && (
                     <p className="reading-text text-sm text-muted-foreground">{part.context}</p>
                   )}

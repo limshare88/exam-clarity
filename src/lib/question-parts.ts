@@ -355,11 +355,34 @@ export function splitQuestionParts(raw: string): QuestionPart[] {
 }
 
 /**
+ * A printed per-part mark allocation, e.g. "(3)", "[3 marks]", "(2 marks)" — exam boards
+ * commonly print this right at the end of each lettered/numbered sub-part's own text.
+ * Matched only at the very end of a part's text (after trimming), since splitQuestionParts
+ * already slices each part's text to stop right where the next marker begins, so a
+ * genuinely-printed allocation for that part always lands at that boundary.
+ */
+const TRAILING_MARKS =
+  /(?:[([]\s*(?:total\s*[:\-]?\s*)?(\d{1,3})\s*(?:marks?)?\s*[)\]]|(\d{1,3})\s*marks?)\.?\s*$/i;
+
+/** Reads a printed mark allocation off the end of one part's own text, if present.
+ * Returns null when nothing is printed there (common when a board only totals marks
+ * for the whole question rather than breaking them down per sub-part). */
+function extractTrailingMarks(text: string): number | null {
+  const match = TRAILING_MARKS.exec(text.trim());
+  if (!match) return null;
+  const raw = match[1] ?? match[2];
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 && value <= 100 ? value : null;
+}
+
+/**
  * The actionable questions a student actually answers: the deepest labelled parts.
  * A parent whose text is only scene-setting is not an answer box — its children are.
  */
-export function leafParts(parts: QuestionPart[]): { label: string; text: string; context: string }[] {
-  const leaves: { label: string; text: string; context: string }[] = [];
+export function leafParts(
+  parts: QuestionPart[],
+): { label: string; text: string; context: string; marks: number | null }[] {
+  const leaves: { label: string; text: string; context: string; marks: number | null }[] = [];
 
   const walk = (node: QuestionPart, context: string) => {
     if (!node.label) return;
@@ -368,7 +391,7 @@ export function leafParts(parts: QuestionPart[]): { label: string; text: string;
       node.children.forEach((child) => walk(child, nextContext));
       return;
     }
-    leaves.push({ label: node.path || node.label, text: node.text, context });
+    leaves.push({ label: node.path || node.label, text: node.text, context, marks: extractTrailingMarks(node.text) });
   };
 
   parts.forEach((part) => walk(part, ""));
