@@ -237,20 +237,22 @@ function Admin() {
         }
 
 
-        // Cut every detected diagram out of its page and store it alongside the question.
-        // A question can have more than one diagram (e.g. an answer-options table for
-        // one sub-part and a separate graph for another), so this is keyed per-question
-        // rather than assuming a single image per row.
-        const diagramPages = result.questions.flatMap((q) => (q.diagrams.length ? [q.page] : []));
+        // Cut every detected diagram out of its OWN page and store it alongside the
+        // question. A question can have more than one diagram (e.g. an answer-options
+        // table for one sub-part and a separate graph for another) spread across more
+        // than one printed page if the question itself spans pages, so each diagram is
+        // rendered and cropped from its own recorded page — never assumed to share the
+        // question's opening page, which would crop it from the wrong page entirely.
+        const diagramPages = result.questions.flatMap((q) => q.diagrams.map((d) => d.page));
         const pages = diagramPages.length ? await renderPaperPages(file, diagramPages) : new Map();
         const diagramsByQuestion = new Map<number, { anchor: string; url: string }[]>();
         for (let i = 0; i < result.questions.length; i += 1) {
           const question = result.questions[i]!;
           if (!question.diagrams.length) continue;
-          const canvas = pages.get(question.page);
-          if (!canvas) continue;
           const cropped: { anchor: string; url: string }[] = [];
           for (const diagram of question.diagrams) {
+            const canvas = pages.get(diagram.page);
+            if (!canvas) continue;
             const url = await cropAndUploadDiagram(canvas, diagram.box, uid);
             if (url) cropped.push({ anchor: diagram.anchor, url });
           }

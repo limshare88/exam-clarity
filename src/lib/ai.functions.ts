@@ -73,8 +73,12 @@ export type DiagramBox = { x: number; y: number; w: number; h: number };
  * text (not a structural label the AI would have to guess in our internal syntax — exam
  * papers are too inconsistently formatted for that to match reliably). `anchor` is a short
  * phrase copied word-for-word from question_text; matching it against each part's own
- * text (client-side, against the same parser that renders the page) finds where it goes. */
-export type ExtractedDiagram = { anchor: string; box: DiagramBox };
+ * text (client-side, against the same parser that renders the page) finds where it goes.
+ * `page` is this diagram's OWN 1-based page number, independent of the question's page: a
+ * question can span more than one printed page, so a diagram on a later page than the
+ * question's opening sentence must record that itself — otherwise it gets cropped from
+ * the wrong page's canvas entirely and shows unrelated content. */
+export type ExtractedDiagram = { anchor: string; page: number; box: DiagramBox };
 
 export type ExtractedExamQuestion = {
   question_number: string;
@@ -117,7 +121,7 @@ MULTIPLE CHOICE. When a question offers answer options (A, B, C, D, tick boxes, 
 
 STEP 4 — MARKS. Read the printed allocation such as [4 marks], (3), (3 marks), [Total: 6]. Store the integer total; sum printed subpart marks. Use 1 only when no allocation is printed.
 
-STEP 5 — DIAGRAMS. A single question can have MORE THAN ONE printed diagram, chart, graph, table image, circuit, map or structural illustration — one per sub-part is common (e.g. an answer-options table next to part (a)(i), and a separate graph next to part (b)). Find every such visual printed with this question and list them ALL in "diagrams": an array of objects with exactly: anchor, x, y, w, h. "anchor" is a phrase of 6 to 15 words copied VERBATIM, word-for-word, from the question_text you are writing for this question — specifically from the sentence of the sub-part this diagram sits next to and illustrates. Every word in "anchor" must appear in question_text exactly as printed there; never paraphrase, shorten, or invent it, and never copy words that are not part of this question's own question_text. Use anchor "" only when a diagram belongs to the whole question's opening stem and is not next to any one specific lettered/numbered sub-part. x, y, w, h are the tight rectangle around that one visual, as fractions of the full page, {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner — exclude surrounding body text from the box. Never merge two separate diagrams into one box. When there is no visual at all, diagrams must be an empty array.
+STEP 5 — DIAGRAMS. A single question can have MORE THAN ONE printed diagram, chart, graph, table image, circuit, map or structural illustration — one per sub-part is common (e.g. an answer-options table next to part (a)(i), and a separate graph next to part (b)). A question can also span more than one printed page, so its diagrams do not all have to be on the question's own opening page. Find every such visual printed with this question, on ANY page it spans, and list them ALL in "diagrams": an array of objects with exactly: anchor, page, x, y, w, h. "anchor" is a phrase of 6 to 15 words copied VERBATIM, word-for-word, from the question_text you are writing for this question — specifically from the sentence of the sub-part this diagram sits next to and illustrates. Every word in "anchor" must appear in question_text exactly as printed there; never paraphrase, shorten, or invent it, and never copy words that are not part of this question's own question_text. Use anchor "" only when a diagram belongs to the whole question's opening stem and is not next to any one specific lettered/numbered sub-part. "page" is the 1-based page THIS SPECIFIC diagram is actually printed on — check carefully, because it is often a different page from where the question starts if the question continues onto a later page. x, y, w, h are the tight rectangle around that one visual, as fractions of that diagram's own page: {"x":0.12,"y":0.34,"w":0.55,"h":0.22} where x,y is the top-left corner — exclude surrounding body text from the box. Never merge two separate diagrams into one box. When there is no visual at all, diagrams must be an empty array.
 
 STEP 6 — PAGE AND PAPER. Set page to the 1-based page number the question is printed on (use 1 for a single screenshot). Read paper_type and exam_year from the printed cover or running header when visible; otherwise "" and null.
 
@@ -134,16 +138,20 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
     // Shared by both the normal and salvage paths: cap count and anchor length, drop
     // implausible or page-sized rectangles. The anchor's actual presence in question_text
     // is verified client-side at render time (see practice.tsx) — this only bounds size.
-    const readDiagrams = (value: unknown): ExtractedDiagram[] => {
+    // fallbackPage covers a diagram whose own page came back missing or unparsable; using
+    // the question's page is still far better than defaulting to page 1.
+    const readDiagrams = (value: unknown, fallbackPage: number): ExtractedDiagram[] => {
       if (!Array.isArray(value)) return [];
       return value
         .flatMap((entry): ExtractedDiagram[] => {
           if (!entry || typeof entry !== "object") return [];
           const raw = entry as Record<string, unknown>;
           const anchor = String(raw["anchor"] ?? "").trim().slice(0, 200);
+          const parsedPage = Math.round(Number(raw["page"]));
+          const page = Number.isFinite(parsedPage) && parsedPage >= 1 ? parsedPage : fallbackPage;
           const box = { x: frac(raw["x"]), y: frac(raw["y"]), w: frac(raw["w"]), h: frac(raw["h"]) };
           if (box.w <= 0.04 || box.h <= 0.03 || box.w * box.h >= 0.9) return [];
-          return [{ anchor, box }];
+          return [{ anchor, page, box }];
         })
         .slice(0, 8);
     };
@@ -168,7 +176,7 @@ Reject any candidate that is an instruction, notice, heading, or general guidanc
           question_text: questionText,
           marks,
           page,
-          diagrams: readDiagrams(item["diagrams"]),
+          diagrams: readDiagrams(item["diagrams"], page),
         },
       ];
     });
