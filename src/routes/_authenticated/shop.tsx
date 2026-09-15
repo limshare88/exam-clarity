@@ -37,8 +37,12 @@ export const Route = createFileRoute("/_authenticated/shop")({
   component: Shop,
 });
 
-const CATEGORIES = ["Outfits", "Hairstyles", "Accessories"] as const;
+const CATEGORIES = ["Outfits", "Hairstyles", "Accessories", "Hats", "Desk Toys", "Backgrounds"] as const;
 type ClosetCategory = (typeof CATEGORIES)[number];
+// Categories with no avatar-specific items at all -- shown the same way for every mascot,
+// so their heading skips the "for Mika/Leo" suffix that only makes sense for closet items
+// actually tailored to one character.
+const UNIVERSAL_ONLY_CATEGORIES = new Set<ClosetCategory>(["Hats", "Desk Toys", "Backgrounds"]);
 type InventoryRow = { item_id: string; category: string; equipped: boolean; avatar_id: string | null };
 
 function Shop() {
@@ -61,19 +65,32 @@ function Shop() {
     },
   });
 
-  const closetItems = useMemo(
-    () => SHOP_ITEMS.filter((item) => "avatar_id" in item && item.avatar_id === activeAvatar),
+  // An item belongs to the current view if it's either scoped to the active avatar, or
+  // has no avatar_id at all (a universal item -- Hats, Desk Toys, Backgrounds, and the
+  // handful of pre-existing generic Outfits like fit-hoodie that predate the avatar-scoped
+  // Outfits Mika/Leo have of their own). This is the same "no avatar_id, or it matches"
+  // rule dashboard.tsx already uses for its equipped-lookup.
+  const visibleItems = useMemo(
+    () => SHOP_ITEMS.filter((item) => !("avatar_id" in item) || item.avatar_id === activeAvatar),
     [activeAvatar],
   );
   const owned = useMemo(
-    () => new Set([...closetItems.filter((item) => item.price === 0).map((item) => item.item_id), ...inventory.map((item) => item.item_id)]),
-    [closetItems, inventory],
+    () => new Set([...visibleItems.filter((item) => item.price === 0).map((item) => item.item_id), ...inventory.map((item) => item.item_id)]),
+    [visibleItems, inventory],
   );
   const equipped = useMemo(() => {
     const result: Record<string, string | null> = {};
-    inventory
-      .filter((item) => item.equipped && item.avatar_id === activeAvatar)
-      .forEach((item) => { result[item.category] = item.item_id; });
+    // A universal item (e.g. fit-hoodie) and an avatar-scoped one (e.g. mika-outfit-cloud)
+    // can end up equipped at the same time -- they're unequipped independently server-side,
+    // scoped by avatar_id, so equipping one never touches the other's equipped flag. That's
+    // a real but rare edge case (nothing in the UI encourages combining them); when it
+    // happens, prefer the avatar-scoped item for what's actually shown on the character and
+    // marked "Active", by writing avatar-scoped rows into the map first.
+    const rows = inventory.filter((item) => item.equipped && (!item.avatar_id || item.avatar_id === activeAvatar));
+    rows.sort((a, b) => (a.avatar_id ? -1 : 1) - (b.avatar_id ? -1 : 1));
+    rows.forEach((item) => {
+      if (!(item.category in result)) result[item.category] = item.item_id;
+    });
     return result;
   }, [activeAvatar, inventory]);
 
@@ -87,7 +104,6 @@ function Shop() {
   }
 
   async function unlockAndEquip(item: ShopItem) {
-    if (!("avatar_id" in item)) return;
     setBusy(true);
     const { error } = await supabase.rpc("unlock_and_equip_closet_item", { p_item_id: item.item_id });
     if (error) {
@@ -120,6 +136,9 @@ function Shop() {
           outfit={equipped["Outfits"]}
           hairstyle={equipped["Hairstyles"]}
           accessory={equipped["Accessories"]}
+          hat={equipped["Hats"]}
+          toy={equipped["Desk Toys"]}
+          background={equipped["Backgrounds"]}
           className="h-[23rem] rounded-2xl md:h-[30rem]"
         />
         <div className="flex flex-col justify-center gap-3">
@@ -156,15 +175,17 @@ function Shop() {
         {CATEGORIES.map((category: ClosetCategory) => (
           <TabsContent key={category} value={category} className="space-y-3">
             <h2 className="text-xl font-bold">
-              {category} for {CHILD_AVATARS.find((a) => a.item_id === activeAvatar)?.item_name ?? "your learner"}
+              {category}
+              {!UNIVERSAL_ONLY_CATEGORIES.has(category) &&
+                ` for ${CHILD_AVATARS.find((a) => a.item_id === activeAvatar)?.item_name ?? "your learner"}`}
             </h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {closetItems.filter((item) => item.category === category).length === 0 && (
+              {visibleItems.filter((item) => item.category === category).length === 0 && (
                 <p className="col-span-full rounded-2xl border-2 border-dashed border-border bg-cream p-4 text-center text-sm text-muted-foreground">
                   No {category.toLowerCase()} available for this companion yet.
                 </p>
               )}
-              {closetItems.filter((item) => item.category === category).map((item) => {
+              {visibleItems.filter((item) => item.category === category).map((item) => {
                 const isOwned = owned.has(item.item_id);
                 const isEquipped = equipped[category] === item.item_id;
                 return (
