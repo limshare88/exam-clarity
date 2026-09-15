@@ -7,6 +7,7 @@ import { useProfile, useRefreshProfile } from "@/hooks/useProfile";
 import { AppShell } from "@/components/AppShell";
 import { Mascot } from "@/components/Mascot";
 import { ShopIcon } from "@/components/ShopIcons";
+import { BackgroundScene } from "@/components/BackgroundScenes";
 import { CHILD_AVATARS, SHOP_ITEMS, type ShopItem } from "@/lib/subjects";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -192,8 +193,12 @@ function Shop() {
                   <article key={item.item_id} className={cn("relative flex min-w-0 flex-col items-center gap-2 rounded-2xl border-2 p-3 text-center", isEquipped ? "border-primary bg-primary/10 shadow-md" : "border-border bg-cream")}>
                     {!isOwned && <span className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-card text-foreground shadow-md" aria-label="Locked"><Lock className="h-4 w-4" /></span>}
                     {isEquipped && <span className="absolute left-2 top-2 z-10 rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">Active</span>}
-                    <div className="flex h-28 w-full items-center justify-center overflow-hidden rounded-xl bg-card/70">
-                      <ShopIcon itemId={item.item_id} className="h-24 w-24" />
+                    <div className="relative flex h-28 w-full items-center justify-center overflow-hidden rounded-xl bg-card/70">
+                      {category === "Backgrounds" ? (
+                        <BackgroundScene itemId={item.item_id} />
+                      ) : (
+                        <ShopIcon itemId={item.item_id} className="h-24 w-24" />
+                      )}
                     </div>
                     <h3 className="min-h-12 text-sm font-semibold leading-snug">{item.item_name}</h3>
                     <Button disabled={busy || isEquipped} onClick={() => chooseItem(item)} variant={isOwned ? "secondary" : "default"} className="min-h-12 w-full rounded-xl px-2 text-sm">
