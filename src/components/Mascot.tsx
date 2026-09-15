@@ -11,7 +11,6 @@ type MascotProps = {
   hat?: string | null | undefined;
   /** Item id of the equipped outfit, e.g. "fit-hoodie". */
   outfit?: string | null | undefined;
-  hairstyle?: string | null | undefined;
   accessory?: string | null | undefined;
   /** Item id of the equipped desk toy, e.g. "toy-cat". */
   toy?: string | null | undefined;
@@ -31,13 +30,12 @@ const CHARACTERS: Record<string, { src: string; name: string }> = {
 const DEFAULT_CHARACTER = { src: chibiGirlAsset.url, name: "Mika, the chibi learner" };
 
 type EquipLayout = {
-  hairstyle: string;
   outfit: string;
   hat: string;
   accessory: string;
 };
 
-// Equipped hats/outfits/hairstyles/accessories render as flat icons positioned directly on
+// Equipped hats/outfits/accessories render as flat icons positioned directly on
 // top of the character art. That only lines up when the position is calibrated to each
 // character's own proportions -- a single shared set of coordinates works by coincidence
 // for whichever character it was tuned against and drifts for anyone drawn at a different
@@ -46,7 +44,6 @@ type EquipLayout = {
 // individual pieces for a character whose proportions differ, without needing to redefine
 // pieces that already fit.
 const DEFAULT_LAYOUT: EquipLayout = {
-  hairstyle: "absolute left-1/2 top-[-2%] h-[42%] w-[88%] -translate-x-1/2 drop-shadow-md",
   outfit: "absolute left-1/2 top-[54%] h-20 w-20 -translate-x-1/2 drop-shadow-md",
   hat: "absolute left-1/2 top-[-6%] h-24 w-24 -translate-x-1/2 drop-shadow-md",
   accessory: "absolute bottom-[16%] right-[-18%] h-20 w-20 drop-shadow-md",
@@ -69,7 +66,7 @@ function layoutFor(character: string | null | undefined): EquipLayout {
   return { ...DEFAULT_LAYOUT, ...(LAYOUT_OVERRIDES[character ?? ""] ?? {}) };
 }
 
-export function Mascot({ hat, outfit, hairstyle, accessory, toy, background, character, className }: MascotProps) {
+export function Mascot({ hat, outfit, accessory, toy, background, character, className }: MascotProps) {
   const selected = CHARACTERS[character ?? ""] ?? DEFAULT_CHARACTER;
   const layout = layoutFor(character);
   return (
@@ -89,7 +86,6 @@ export function Mascot({ hat, outfit, hairstyle, accessory, toy, background, cha
           height={1024}
           className="absolute inset-0 h-full w-full object-contain drop-shadow-lg"
         />
-        {hairstyle && <ShopIcon itemId={hairstyle} className={layout.hairstyle} />}
         {/* Equipped items render as the actual shop icon, positioned directly on the
             character, so what's equipped is what she sees worn — not a disconnected
             floating sticker. */}

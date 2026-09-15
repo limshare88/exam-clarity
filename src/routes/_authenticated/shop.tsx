@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/shop")({
       { title: "Closet & Shop — ExamPulse" },
       { name: "description", content: "Dress Mika and Leo in starter and unlockable styles." },
       { property: "og:title", content: "Closet & Shop — ExamPulse" },
-      { property: "og:description", content: "Choose outfits, hairstyles and accessories for Mika and Leo." },
+      { property: "og:description", content: "Choose outfits and accessories for Mika and Leo." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -38,7 +38,7 @@ export const Route = createFileRoute("/_authenticated/shop")({
   component: Shop,
 });
 
-const CATEGORIES = ["Outfits", "Hairstyles", "Accessories", "Hats", "Desk Toys", "Backgrounds"] as const;
+const CATEGORIES = ["Outfits", "Accessories", "Hats", "Desk Toys", "Backgrounds"] as const;
 type ClosetCategory = (typeof CATEGORIES)[number];
 // Categories with no avatar-specific items at all -- shown the same way for every mascot,
 // so their heading skips the "for Mika/Leo" suffix that only makes sense for closet items
@@ -46,12 +46,14 @@ type ClosetCategory = (typeof CATEGORIES)[number];
 const UNIVERSAL_ONLY_CATEGORIES = new Set<ClosetCategory>(["Hats", "Desk Toys", "Backgrounds"]);
 type InventoryRow = { item_id: string; category: string; equipped: boolean; avatar_id: string | null };
 
+type PendingUnlock = { kind: "item"; item: ShopItem } | { kind: "avatar"; avatar: (typeof CHILD_AVATARS)[number] };
+
 function Shop() {
   const { data: profile } = useProfile();
   const refreshProfile = useRefreshProfile();
   const queryClient = useQueryClient();
   const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
-  const [pendingItem, setPendingItem] = useState<ShopItem | null>(null);
+  const [pending, setPending] = useState<PendingUnlock | null>(null);
   const [busy, setBusy] = useState(false);
   const activeAvatar = selectedAvatar ?? profile?.active_mascot ?? "mascot-chibi";
 
@@ -65,6 +67,18 @@ function Shop() {
       return data as InventoryRow[];
     },
   });
+
+  // Mallow and Pip cost coins to unlock, tracked the same way as any other purchase --
+  // a row in gamification_inventory (category "Mascots") once bought. Mika and Leo are
+  // always available since they're free.
+  const ownedAvatars = useMemo(
+    () =>
+      new Set([
+        ...CHILD_AVATARS.filter((a) => a.price === 0).map((a) => a.item_id),
+        ...inventory.filter((i) => i.category === "Mascots").map((i) => i.item_id),
+      ]),
+    [inventory],
+  );
 
   // An item belongs to the current view if it's either scoped to the active avatar, or
   // has no avatar_id at all (a universal item -- Hats, Desk Toys, Backgrounds, and the
@@ -95,13 +109,39 @@ function Shop() {
     return result;
   }, [activeAvatar, inventory]);
 
-  async function chooseAvatar(avatarId: string) {
+  async function selectAvatar(avatarId: string) {
     setSelectedAvatar(avatarId);
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) return;
     const { error } = await supabase.from("user_profiles").update({ active_mascot: avatarId }).eq("user_id", auth.user.id);
     if (error) toast.error(error.message);
     else refreshProfile();
+  }
+
+  function chooseAvatar(avatarId: string) {
+    if (ownedAvatars.has(avatarId)) {
+      void selectAvatar(avatarId);
+      return;
+    }
+    const avatar = CHILD_AVATARS.find((a) => a.item_id === avatarId);
+    if (avatar) setPending({ kind: "avatar", avatar });
+  }
+
+  async function unlockAndSelectAvatar(avatar: (typeof CHILD_AVATARS)[number]) {
+    setBusy(true);
+    const { error } = await supabase.rpc("unlock_and_select_mascot", { p_mascot_id: avatar.item_id });
+    if (error) {
+      toast.error(error.message.includes("Not enough") ? "Not enough Pulse Coins yet. Finish another drill to earn more." : error.message);
+    } else {
+      setSelectedAvatar(avatar.item_id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["inventory"] }),
+        queryClient.invalidateQueries({ queryKey: ["profile"] }),
+      ]);
+      toast.success(`${avatar.item_name} is unlocked!`);
+    }
+    setBusy(false);
+    setPending(null);
   }
 
   async function unlockAndEquip(item: ShopItem) {
@@ -117,12 +157,12 @@ function Shop() {
       toast.success(item.price === 0 ? `${item.item_name} is ready!` : `${item.item_name} is unlocked and equipped!`);
     }
     setBusy(false);
-    setPendingItem(null);
+    setPending(null);
   }
 
   function chooseItem(item: ShopItem) {
     if (owned.has(item.item_id)) void unlockAndEquip(item);
-    else setPendingItem(item);
+    else setPending({ kind: "item", item });
   }
 
   return (
@@ -135,7 +175,6 @@ function Shop() {
         <Mascot
           character={activeAvatar}
           outfit={equipped["Outfits"]}
-          hairstyle={equipped["Hairstyles"]}
           accessory={equipped["Accessories"]}
           hat={equipped["Hats"]}
           toy={equipped["Desk Toys"]}
@@ -147,24 +186,31 @@ function Shop() {
           <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Choose your learner">
             {CHILD_AVATARS.map((avatar) => {
               const selected = activeAvatar === avatar.item_id;
+              const isOwned = ownedAvatars.has(avatar.item_id);
               return (
                 <Button
                   key={avatar.item_id}
                   role="radio"
                   aria-checked={selected}
                   variant={selected ? "default" : "outline"}
-                  onClick={() => void chooseAvatar(avatar.item_id)}
-                  className="h-auto min-h-20 flex-col gap-1 rounded-2xl border-2"
+                  onClick={() => chooseAvatar(avatar.item_id)}
+                  className="relative h-auto min-h-20 flex-col gap-1 rounded-2xl border-2"
                 >
+                  {!isOwned && (
+                    <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-card text-foreground shadow-md" aria-label="Locked">
+                      <Lock className="h-3 w-3" />
+                    </span>
+                  )}
                   <span className="text-2xl" aria-hidden>{avatar.emoji}</span>
                   <span>{avatar.item_name}</span>
+                  {!isOwned && <span className="text-xs font-bold">🪙 {avatar.price}</span>}
                 </Button>
               );
             })}
           </div>
           <div className="rounded-2xl border-2 border-border bg-mint p-4 text-sm font-semibold text-mint-foreground">
             <Sparkles className="mr-2 inline h-4 w-4" />
-            Two starter outfits are free for each learner.
+            Two starter outfits are free for each learner. Mallow and Pip can be unlocked with Pulse Coins.
           </div>
         </div>
       </section>
@@ -212,17 +258,27 @@ function Shop() {
         ))}
       </Tabs>
 
-      <AlertDialog open={pendingItem !== null} onOpenChange={(open) => { if (!open && !busy) setPendingItem(null); }}>
+      <AlertDialog open={pending !== null} onOpenChange={(open) => { if (!open && !busy) setPending(null); }}>
         <AlertDialogContent className="w-[calc(100%-2rem)] rounded-2xl border-2 border-border">
           <AlertDialogHeader>
-            <AlertDialogTitle>Unlock this outfit?</AlertDialogTitle>
+            <AlertDialogTitle>{pending?.kind === "avatar" ? "Unlock this companion?" : "Unlock this outfit?"}</AlertDialogTitle>
             <AlertDialogDescription className="text-base text-foreground">
-              Unlock this outfit for {pendingItem?.price ?? 0} coins?
+              {pending?.kind === "avatar"
+                ? `Unlock ${pending.avatar.item_name} for ${pending.avatar.price} coins?`
+                : `Unlock this outfit for ${pending?.kind === "item" ? pending.item.price : 0} coins?`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Not now</AlertDialogCancel>
-            <AlertDialogAction disabled={busy} onClick={(event) => { event.preventDefault(); if (pendingItem) void unlockAndEquip(pendingItem); }}>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!pending) return;
+                if (pending.kind === "avatar") void unlockAndSelectAvatar(pending.avatar);
+                else void unlockAndEquip(pending.item);
+              }}
+            >
               {busy ? "Unlocking…" : "Confirm unlock"}
             </AlertDialogAction>
           </AlertDialogFooter>

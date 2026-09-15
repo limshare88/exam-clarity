@@ -309,6 +309,13 @@ export type Database = {
           item_id: string
         }[]
       }
+      unlock_and_select_mascot: {
+        Args: { p_mascot_id: string }
+        Returns: {
+          coins: number
+          mascot_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

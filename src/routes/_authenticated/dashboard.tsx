@@ -149,7 +149,6 @@ function Dashboard() {
           character={profile?.active_mascot}
           hat={equipped["Hats"]}
           outfit={equipped["Outfits"]}
-          hairstyle={equipped["Hairstyles"]}
           accessory={equipped["Accessories"]}
           toy={equipped["Desk Toys"]}
           background={equipped["Backgrounds"]}

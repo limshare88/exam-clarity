@@ -105,7 +105,7 @@ function Onboarding() {
             You can unlock more companions later in the toy shop with Pulse Coins.
           </p>
           <div className="grid grid-cols-2 gap-3">
-            {CHILD_AVATARS.map((option) => (
+            {CHILD_AVATARS.filter((option) => option.price === 0).map((option) => (
               <button
                 key={option.item_id}
                 type="button"
