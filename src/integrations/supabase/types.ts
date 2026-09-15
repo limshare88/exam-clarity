@@ -316,6 +316,10 @@ export type Database = {
           mascot_id: string
         }[]
       }
+      unequip_closet_category: {
+        Args: { p_category: string; p_avatar_id: string | null }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

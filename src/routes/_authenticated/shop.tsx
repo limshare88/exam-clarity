@@ -165,6 +165,24 @@ function Shop() {
     else setPending({ kind: "item", item });
   }
 
+  // "None" clears a category back to nothing worn. Outfits can have an avatar-scoped item
+  // and a universal one (e.g. fit-hoodie) equipped at once (see the tie-break above), so
+  // clear both scopes rather than guessing which one is actually showing.
+  async function clearCategory(category: ClosetCategory) {
+    setBusy(true);
+    const [a, b] = await Promise.all([
+      supabase.rpc("unequip_closet_category", { p_category: category, p_avatar_id: activeAvatar }),
+      supabase.rpc("unequip_closet_category", { p_category: category, p_avatar_id: null }),
+    ]);
+    const error = a.error ?? b.error;
+    if (error) {
+      toast.error(error.message);
+    } else {
+      await queryClient.invalidateQueries({ queryKey: ["inventory"] });
+    }
+    setBusy(false);
+  }
+
   return (
     <AppShell
       title="Closet & Shop"
@@ -227,6 +245,16 @@ function Shop() {
                 ` for ${CHILD_AVATARS.find((a) => a.item_id === activeAvatar)?.item_name ?? "your learner"}`}
             </h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <article className={cn("relative flex min-w-0 flex-col items-center gap-2 rounded-2xl border-2 p-3 text-center", !equipped[category] ? "border-primary bg-primary/10 shadow-md" : "border-border bg-cream")}>
+                {!equipped[category] && <span className="absolute left-2 top-2 z-10 rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">Active</span>}
+                <div className="flex h-28 w-full items-center justify-center overflow-hidden rounded-xl bg-card/70 text-4xl text-muted-foreground" aria-hidden>
+                  🚫
+                </div>
+                <h3 className="min-h-12 text-sm font-semibold leading-snug">None</h3>
+                <Button disabled={busy || !equipped[category]} onClick={() => void clearCategory(category)} variant="secondary" className="min-h-12 w-full rounded-xl px-2 text-sm">
+                  {!equipped[category] ? "Selected" : "Take off"}
+                </Button>
+              </article>
               {visibleItems.filter((item) => item.category === category).length === 0 && (
                 <p className="col-span-full rounded-2xl border-2 border-dashed border-border bg-cream p-4 text-center text-sm text-muted-foreground">
                   No {category.toLowerCase()} available for this companion yet.
