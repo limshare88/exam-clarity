@@ -172,7 +172,7 @@ function Shop() {
     setBusy(true);
     const [a, b] = await Promise.all([
       supabase.rpc("unequip_closet_category", { p_category: category, p_avatar_id: activeAvatar }),
-      supabase.rpc("unequip_closet_category", { p_category: category, p_avatar_id: null }),
+      supabase.rpc("unequip_closet_category", { p_category: category, p_avatar_id: null as unknown as string }),
     ]);
     const error = a.error ?? b.error;
     if (error) {
