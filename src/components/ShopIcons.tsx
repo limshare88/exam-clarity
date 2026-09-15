@@ -57,7 +57,7 @@ export function ShopIcon({
   className,
 }: {
   itemId: string;
-  character?: string | null;
+  character?: string | null | undefined;
   className?: string;
 }) {
   const src = getShopPieceAsset(itemId, character);
@@ -75,5 +75,5 @@ export function ShopIcon({
   );
 }
 
-export const HAS_SHOP_ICON = (itemId: string, character?: string | null): boolean =>
+export const HAS_SHOP_ICON = (itemId: string, character?: string | null | undefined): boolean =>
   Boolean(getShopPieceAsset(itemId, character));

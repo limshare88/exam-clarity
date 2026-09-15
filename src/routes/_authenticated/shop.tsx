@@ -210,7 +210,7 @@ function Shop() {
           </div>
           <div className="rounded-2xl border-2 border-border bg-mint p-4 text-sm font-semibold text-mint-foreground">
             <Sparkles className="mr-2 inline h-4 w-4" />
-            Two starter outfits are free for each learner. Mallow and Pip can be unlocked with Pulse Coins.
+             Mika and Leo each have two free starter outfits. Mallow and Pip unlock with Pulse Coins and have fitted premium looks.
           </div>
         </div>
       </section>
