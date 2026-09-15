@@ -33,6 +33,8 @@ export type SubjectBoard = { subject: string; board: string };
 export const CHILD_AVATARS = [
   { item_id: "mascot-chibi", item_name: "Mika", emoji: "🌸" },
   { item_id: "mascot-chibi-boy", item_name: "Leo", emoji: "🌟" },
+  { item_id: "mascot-long-ear", item_name: "Mallow", emoji: "🐰" },
+  { item_id: "mascot-robot", item_name: "Pip", emoji: "🤖" },
 ] as const;
 
 export const SHOP_ITEMS = [

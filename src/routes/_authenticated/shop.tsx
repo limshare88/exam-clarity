@@ -155,8 +155,15 @@ function Shop() {
         </TabsList>
         {CATEGORIES.map((category: ClosetCategory) => (
           <TabsContent key={category} value={category} className="space-y-3">
-            <h2 className="text-xl font-bold">{category} for {activeAvatar === "mascot-chibi" ? "Mika" : "Leo"}</h2>
+            <h2 className="text-xl font-bold">
+              {category} for {CHILD_AVATARS.find((a) => a.item_id === activeAvatar)?.item_name ?? "your learner"}
+            </h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {closetItems.filter((item) => item.category === category).length === 0 && (
+                <p className="col-span-full rounded-2xl border-2 border-dashed border-border bg-cream p-4 text-center text-sm text-muted-foreground">
+                  No {category.toLowerCase()} available for this companion yet.
+                </p>
+              )}
               {closetItems.filter((item) => item.category === category).map((item) => {
                 const isOwned = owned.has(item.item_id);
                 const isEquipped = equipped[category] === item.item_id;

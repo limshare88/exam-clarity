@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useProfile, useRefreshProfile } from "@/hooks/useProfile";
-import { SUBJECTS, EXAM_BOARDS, LEARNING_PROFILES } from "@/lib/subjects";
+import { SUBJECTS, EXAM_BOARDS, LEARNING_PROFILES, CHILD_AVATARS } from "@/lib/subjects";
 import { Mascot } from "@/components/Mascot";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +39,7 @@ function Onboarding() {
   const [age, setAge] = useState("");
   const [boards, setBoards] = useState<Record<string, string>>({});
   const [needs, setNeeds] = useState<string[]>([]);
-  const [mascot, setMascot] = useState<"mascot-chibi" | "mascot-chibi-boy">("mascot-chibi");
+  const [mascot, setMascot] = useState<string>("mascot-chibi");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -47,7 +47,7 @@ function Onboarding() {
     setName(profile.name ?? "");
     setAge(profile.age ? String(profile.age) : "");
     setNeeds(profile.learning_profile ?? []);
-    if (profile.active_mascot === "mascot-chibi-boy" || profile.active_mascot === "mascot-chibi") {
+    if (profile.active_mascot && CHILD_AVATARS.some((a) => a.item_id === profile.active_mascot)) {
       setMascot(profile.active_mascot);
     }
     const map: Record<string, string> = {};
@@ -105,23 +105,18 @@ function Onboarding() {
             You can unlock more companions later in the toy shop with Pulse Coins.
           </p>
           <div className="grid grid-cols-2 gap-3">
-            {(
-              [
-                { id: "mascot-chibi" as const, label: "Chibi Girl" },
-                { id: "mascot-chibi-boy" as const, label: "Chibi Boy" },
-              ]
-            ).map((option) => (
+            {CHILD_AVATARS.map((option) => (
               <button
-                key={option.id}
+                key={option.item_id}
                 type="button"
-                onClick={() => setMascot(option.id)}
+                onClick={() => setMascot(option.item_id)}
                 className={cn(
                   "flex flex-col items-center gap-2 rounded-2xl border-2 p-3 text-center transition",
-                  mascot === option.id ? "border-primary bg-primary/10 shadow-md" : "border-border bg-cream",
+                  mascot === option.item_id ? "border-primary bg-primary/10 shadow-md" : "border-border bg-cream",
                 )}
               >
-                <Mascot character={option.id} className="h-40 rounded-xl border pointer-events-none" />
-                <span className="text-base font-semibold">{option.label}</span>
+                <Mascot character={option.item_id} className="h-40 rounded-xl border pointer-events-none" />
+                <span className="text-base font-semibold">{option.item_name}</span>
               </button>
             ))}
           </div>
