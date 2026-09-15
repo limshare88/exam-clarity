@@ -300,6 +300,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      unequip_closet_category: {
+        Args: { p_avatar_id: string; p_category: string }
+        Returns: undefined
+      }
       unlock_and_equip_closet_item: {
         Args: { p_item_id: string }
         Returns: {
@@ -315,10 +319,6 @@ export type Database = {
           coins: number
           mascot_id: string
         }[]
-      }
-      unequip_closet_category: {
-        Args: { p_category: string; p_avatar_id: string | null }
-        Returns: undefined
       }
     }
     Enums: {
