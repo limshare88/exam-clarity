@@ -43,7 +43,7 @@ type ClosetCategory = (typeof CATEGORIES)[number];
 // Categories with no avatar-specific items at all -- shown the same way for every mascot,
 // so their heading skips the learner suffix that only makes sense for closet items
 // actually tailored to one character.
-const UNIVERSAL_ONLY_CATEGORIES = new Set<ClosetCategory>(["Hats", "Desk Toys", "Backgrounds"]);
+const UNIVERSAL_ONLY_CATEGORIES = new Set<ClosetCategory>(["Desk Toys", "Backgrounds"]);
 type InventoryRow = { item_id: string; category: string; equipped: boolean; avatar_id: string | null };
 
 type PendingUnlock = { kind: "item"; item: ShopItem } | { kind: "avatar"; avatar: (typeof CHILD_AVATARS)[number] };
