@@ -13,3 +13,7 @@
 - [x] Upgrade Mika and Leo with a character-specific Closet & Shop.
 - [x] Add secure atomic outfit unlocking, coin deduction, and equipping.
 - [x] Verify hosted character art and closet behavior on mobile and desktop.
+- [ ] Replace flat wardrobe and desk-toy icons with shaded mascot-style artwork.
+- [ ] Add fitted outfits, hats, and accessories for Mika, Leo, Mallow, and Pip.
+- [ ] Keep the client and purchase catalogs synchronized for every new wearable.
+- [ ] Verify all four mascots and purchase flows on mobile and desktop.
