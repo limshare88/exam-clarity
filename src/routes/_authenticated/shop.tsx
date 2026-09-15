@@ -28,9 +28,9 @@ export const Route = createFileRoute("/_authenticated/shop")({
   head: () => ({
     meta: [
       { title: "Closet & Shop — ExamPulse" },
-      { name: "description", content: "Dress Mika and Leo in starter and unlockable styles." },
+      { name: "description", content: "Dress Mika, Leo, Mallow, and Pip in fitted illustrated styles." },
       { property: "og:title", content: "Closet & Shop — ExamPulse" },
-      { property: "og:description", content: "Choose outfits and accessories for Mika and Leo." },
+      { property: "og:description", content: "Choose fitted outfits and accessories for every ExamPulse mascot." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -41,7 +41,7 @@ export const Route = createFileRoute("/_authenticated/shop")({
 const CATEGORIES = ["Outfits", "Accessories", "Hats", "Desk Toys", "Backgrounds"] as const;
 type ClosetCategory = (typeof CATEGORIES)[number];
 // Categories with no avatar-specific items at all -- shown the same way for every mascot,
-// so their heading skips the "for Mika/Leo" suffix that only makes sense for closet items
+// so their heading skips the learner suffix that only makes sense for closet items
 // actually tailored to one character.
 const UNIVERSAL_ONLY_CATEGORIES = new Set<ClosetCategory>(["Hats", "Desk Toys", "Backgrounds"]);
 type InventoryRow = { item_id: string; category: string; equipped: boolean; avatar_id: string | null };
@@ -168,7 +168,7 @@ function Shop() {
   return (
     <AppShell
       title="Closet & Shop"
-      subtitle="Create a look for Mika or Leo"
+      subtitle="Create a fitted look for every learner"
       right={<div className="rounded-2xl border-2 border-border bg-cream px-3 py-2 text-sm font-bold">🪙 {profile?.coins ?? 0}</div>}
     >
       <section className="grid gap-4 md:grid-cols-[minmax(0,1.1fr)_minmax(17rem,.9fr)]">
@@ -243,7 +243,7 @@ function Shop() {
                       {category === "Backgrounds" ? (
                         <BackgroundScene itemId={item.item_id} />
                       ) : (
-                        <ShopIcon itemId={item.item_id} className="h-24 w-24" />
+                        <ShopIcon itemId={item.item_id} character={activeAvatar} className="h-24 w-24" />
                       )}
                     </div>
                     <h3 className="min-h-12 text-sm font-semibold leading-snug">{item.item_name}</h3>
