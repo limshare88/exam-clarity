@@ -3,7 +3,7 @@ import chibiGirlAsset from "@/assets/mascot-chibi-girl.png.asset.json";
 import chibiBoyAsset from "@/assets/mascot-chibi-boy.png.asset.json";
 import longEarAsset from "@/assets/mascot-long-ear.png.asset.json";
 import helperRobotAsset from "@/assets/mascot-helper-robot.png.asset.json";
-import { getMascotCompositeAsset, ShopIcon } from "@/components/ShopIcons";
+import { getMascotLookAsset, ShopIcon } from "@/components/ShopIcons";
 import { BackgroundScene } from "@/components/BackgroundScenes";
 
 type MascotProps = {
@@ -31,9 +31,7 @@ const DEFAULT_CHARACTER = { src: chibiGirlAsset.url, name: "Mika, the chibi lear
 
 export function Mascot({ hat, outfit, accessory, toy, background, character, className }: MascotProps) {
   const selected = CHARACTERS[character ?? ""] ?? DEFAULT_CHARACTER;
-  const outfitComposite = getMascotCompositeAsset(outfit, character);
-  const hatLayer = getMascotCompositeAsset(hat, character);
-  const accessoryLayer = getMascotCompositeAsset(accessory, character);
+  const completeLook = getMascotLookAsset(character, outfit, hat, accessory);
   return (
     <div
       className={cn(
@@ -45,14 +43,12 @@ export function Mascot({ hat, outfit, accessory, toy, background, character, cla
 
       <div className="relative aspect-[3/4] h-[85%]" aria-label={selected.name} role="img">
         <img
-          src={outfitComposite ?? selected.src}
+          src={completeLook ?? selected.src}
           alt=""
           width={768}
           height={1024}
           className="absolute inset-0 h-full w-full object-contain drop-shadow-lg"
         />
-        {hatLayer && <img src={hatLayer} alt="" width={768} height={1024} className="pointer-events-none absolute inset-0 h-full w-full object-contain drop-shadow-md" />}
-        {accessoryLayer && <img src={accessoryLayer} alt="" width={768} height={1024} className="pointer-events-none absolute inset-0 h-full w-full object-contain drop-shadow-md" />}
       </div>
 
       {toy && (

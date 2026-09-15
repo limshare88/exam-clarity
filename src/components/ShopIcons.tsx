@@ -51,6 +51,24 @@ export function getMascotCompositeAsset(
   return assetFrom(compositeModules, "composites", fittedId);
 }
 
+/** Resolves one flattened character image for the complete equipped look. */
+export function getMascotLookAsset(
+  character?: string | null,
+  outfit?: string | null,
+  hat?: string | null,
+  accessory?: string | null,
+) {
+  const avatar = mascotArtKey(character);
+  if (hat || accessory) {
+    return assetFrom(
+      compositeModules,
+      "composites",
+      `${avatar}--look--${outfit || "base"}--${hat || "none"}--${accessory || "none"}`,
+    );
+  }
+  return getMascotCompositeAsset(outfit, character);
+}
+
 export function ShopIcon({
   itemId,
   character,
