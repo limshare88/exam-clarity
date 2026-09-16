@@ -15,6 +15,7 @@ function getBackgroundImageAsset(itemId: string): string | null {
 const DEFAULT_BACKGROUNDS: Record<string, string> = {
   "mascot-chibi": "mika-bg-landing",
   "mascot-chibi-boy": "leo-bg-playground",
+  "mascot-robot": "pip-bg-workshop",
 };
 
 /** Renders the illustrated image for a background item id, or (if nothing is equipped)
