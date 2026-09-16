@@ -3,13 +3,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { subjectStrategyRule } from "@/lib/subjects";
 import type { ExamSchematicData, SchematicKind } from "@/components/ExamSchematic";
 
-const MODEL = "google/gemini-3.8-flash";
-
-// Dual-AI routing for the subject-aware coaching features (coach, deconstruct, reinforce,
-// chat) -- English goes to Claude, every other subject goes to OpenAI. This is step one of
-// moving off the shared Lovable AI gateway; extraction, mark-scheme reading, vocab lookup,
-// and the stumble-block summary are NOT part of this migration slice yet and still use the
-// callAI/MODEL pair above.
+// All AI calls in this file now go directly to the app's own provider keys -- the shared
+// Lovable AI gateway (and its single Gemini model for everything) is no longer used at
+// all. Dual-AI routing for the subject-aware coaching features (coach, deconstruct,
+// reinforce, chat): English goes to Claude, every other subject goes to OpenAI. Extraction,
+// mark-scheme reading, vocab lookup, and the stumble-block summary go to Gemini directly
+// (see callGemini below), the same model they already ran on through the gateway.
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 const OPENAI_MODEL = "gpt-5.4-mini";
 
@@ -136,38 +135,36 @@ async function callSubjectAI(subject: string, system: string, user: string): Pro
 
 type MediaInput = { mimeType: string; data: string };
 
-async function callAI(
-  system: string,
-  user: string,
-  media?: MediaInput,
-): Promise<Record<string, unknown>> {
-  const key = process.env["LOVABLE_API_KEY"];
-  if (!key) throw new Error("AI is not configured yet.");
+const GEMINI_MODEL = "gemini-3.8-flash";
 
-  const requestContent = media
-    ? [
-        { type: "text", text: user },
-        ...(media.mimeType === "application/pdf"
-          ? [{ type: "file", file: { filename: "exam-paper.pdf", file_data: `data:${media.mimeType};base64,${media.data}` } }]
-          : [{ type: "image_url", image_url: { url: `data:${media.mimeType};base64,${media.data}` } }]),
-      ]
-    : user;
+/** Final slice of leaving the shared Lovable AI gateway: extraction, mark-scheme reading,
+ * word lookups, and the stumble-block summary all move to this model directly, via the
+ * user's own Gemini key -- same model (gemini-3.8-flash) these already ran on through the
+ * gateway, chosen deliberately to keep behaviour unchanged. Extraction in particular went
+ * through a lot of prompt tuning against this exact model's behaviour (diagram bounding
+ * boxes, margin-strip avoidance, multi-page layout), so swapping to a different model here
+ * risked quietly undoing that tuning; swapping only who it's billed to does not. */
+async function callGemini(system: string, user: string, media?: MediaInput): Promise<Record<string, unknown>> {
+  const key = process.env["GEMINI_API_KEY"];
+  if (!key) throw new Error("The AI helper is not configured yet (missing GEMINI_API_KEY).");
+
+  const userParts: Record<string, unknown>[] = [{ text: user }];
+  if (media) {
+    userParts.push({ inlineData: { mimeType: media.mimeType, data: media.data } });
+  }
 
   let res: Response | undefined;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Lovable-API-Key": key,
+        "x-goog-api-key": key,
       },
       body: JSON.stringify({
-        model: MODEL,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: requestContent },
-        ],
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: userParts }],
+        generationConfig: { responseMimeType: "application/json" },
       }),
     });
     if (res.ok || (res.status !== 429 && res.status < 500)) break;
@@ -176,21 +173,20 @@ async function callAI(
   }
 
   if (!res) throw new Error("The AI helper could not start.");
-
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 429) throw new Error("The helper is busy right now. Please try again in a moment.");
-    if (res.status === 402) throw new Error("AI credits have run out. Please top up to keep using the helper.");
-    throw new Error(`AI request failed (${res.status}): ${text.slice(0, 200)}`);
+    if (res.status === 400 || res.status === 403) {
+      throw new Error("The AI helper's API key was rejected. Check GEMINI_API_KEY.");
+    }
+    throw new Error(`Gemini request failed (${res.status}): ${text.slice(0, 200)}`);
   }
 
-  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const responseContent = json.choices?.[0]?.message?.content ?? "{}";
-  try {
-    return JSON.parse(responseContent) as Record<string, unknown>;
-  } catch {
-    return { raw: responseContent };
-  }
+  const json = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const textBlock = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "{}";
+  return parseJsonLoose(textBlock);
 }
 
 const TONE =
@@ -245,7 +241,7 @@ export const extractExamQuestions = createServerFn({ method: "POST" })
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
     }
 
-    const out = await callAI(
+    const out = await callGemini(
       `You are a strict exam-paper extraction engine for ${data.board || "the selected exam board"} ${data.subject} papers.
 Return JSON with keys: paper_type (string like "Paper 1" or "" if not printed), exam_year (4-digit integer or null), and questions — an array of objects with exactly: question_number, question_text, marks, page, diagrams, part_marks.
 
@@ -409,7 +405,7 @@ export const extractMarkScheme = createServerFn({ method: "POST" })
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
     }
 
-    const out = await callAI(
+    const out = await callGemini(
       `You read official ${data.board || "exam board"} ${data.subject} MARKING SCHEMES (also called mark schemes, MS, marking criteria or answer keys).
 This document is an answer guide, not a question paper. Do NOT require printed question body text and do NOT reject the document because it has no full questions.
 Return JSON with keys:
@@ -528,7 +524,7 @@ export const lookupWord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { word: string; subject: string; sentence: string }) => input)
   .handler(async ({ data, context }) => {
-    const out = await callAI(
+    const out = await callGemini(
       `${TONE} You explain one word at a time. Reply as JSON with keys: definition (simple, max 20 words), everyday_example (one everyday sentence), subject_context (how the word is used specifically in the named exam subject, and how that differs from everyday use).`,
       `Word: "${data.word}"\nSubject: ${data.subject}\nSentence it appeared in: ${data.sentence}`,
     );
@@ -900,7 +896,7 @@ export const summariseStumbleBlocks = createServerFn({ method: "POST" })
       return { summary: "No practice yet. Finish a few questions and a summary will appear here." };
     }
 
-    const out = await callAI(
+    const out = await callGemini(
       `${TONE} Write a short, kind summary (max 4 short sentences) of the concepts, command words and technical vocabulary this student currently finds hardest. Reply as JSON with key: summary.`,
       `Clicked words: ${(words ?? []).map((w) => `${w.word} (${w.subject} x${w.click_count})`).join(", ") || "none"}
 Struggle tags from marked strategies: ${(logs ?? []).flatMap((l) => l.struggle_tags ?? []).join(", ") || "none"}
