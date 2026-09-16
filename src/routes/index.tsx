@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,14 +46,19 @@ function Welcome() {
 
   async function signInWithGoogle() {
     setBusy(true);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
     });
     setBusy(false);
-    if (result.error) {
+    if (error) {
       toast.error("Google sign-in didn't work. Please try the email link instead.");
       return;
     }
+    // On success this redirects the whole page to Google's consent screen -- there is no
+    // in-page result to handle here. Coming back, the useEffect above (getSession +
+    // onAuthStateChange) picks up the new session from the URL and navigates to
+    // /dashboard, the same as it already does for the email-link flow below.
   }
 
   async function sendLink(e: React.FormEvent) {
