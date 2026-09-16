@@ -6,8 +6,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useProfile, useRefreshProfile, awardCoins } from "@/hooks/useProfile";
 import { AppShell } from "@/components/AppShell";
 import { VocabText } from "@/components/VocabText";
-import { coachStrategy, deconstructQuestion, generateReinforceQuestion } from "@/lib/ai.functions";
+import { askPracticeQuestion, coachStrategy, deconstructQuestion, generateReinforceQuestion, logChatDoubts } from "@/lib/ai.functions";
 import { subjectStrategyRule } from "@/lib/subjects";
+import { cn } from "@/lib/utils";
 import { splitQuestionParts, leafParts, type QuestionPart } from "@/lib/question-parts";
 import { ExamSchematic, type ExamSchematicData } from "@/components/ExamSchematic";
 
@@ -28,7 +29,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Mic, Volume2, Square } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Mic, Volume2, Square, MessageCircleQuestion, Send } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/practice")({
@@ -134,6 +143,11 @@ function Workspace() {
   const [busy, setBusy] = useState<string | null>(null);
   const [recording, setRecording] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatMessagesRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const startedAt = useRef<number>(Date.now());
   const seen = useRef<Set<string>>(new Set());
 
@@ -141,6 +155,54 @@ function Workspace() {
   const deconstruct = useServerFn(deconstructQuestion);
   const coach = useServerFn(coachStrategy);
   const reinforce = useServerFn(generateReinforceQuestion);
+  const askQuestion = useServerFn(askPracticeQuestion);
+  const logDoubts = useServerFn(logChatDoubts);
+
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
+  }, [chatMessages]);
+
+  // A chat belongs to one question. When the question changes, flush whatever doubts
+  // came up in the outgoing chat (so Reinforce can draw on them later) and start fresh --
+  // she asked for a clean chat per question, not one long running thread.
+  useEffect(() => {
+    const ctx = active ? { subject: active.subject, board: active.board, questionText: active.question_text } : null;
+    return () => {
+      if (ctx && chatMessagesRef.current.length) {
+        void logDoubts({ data: { ...ctx, messages: chatMessagesRef.current } });
+      }
+      setChatMessages([]);
+      setChatOpen(false);
+      setChatInput("");
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.question_text]);
+
+  async function sendChatMessage() {
+    if (!active || chatBusy) return;
+    const message = chatInput.trim();
+    if (!message) return;
+    const nextMessages = [...chatMessages, { role: "user" as const, content: message }];
+    setChatMessages(nextMessages);
+    setChatInput("");
+    setChatBusy(true);
+    try {
+      const res = await askQuestion({
+        data: {
+          subject: active.subject,
+          board: active.board,
+          questionText: active.question_text,
+          history: chatMessages,
+          message,
+        },
+      });
+      setChatMessages([...nextMessages, { role: "assistant", content: res.reply }]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "The helper could not reply right now.");
+    } finally {
+      setChatBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!subject && subjects.length) setSubject(subjects[0]!.subject);
@@ -446,6 +508,7 @@ function Workspace() {
   const barColor = pct > 60 ? "bg-success" : pct > 25 ? "bg-warning" : "bg-destructive";
 
   return (
+    <>
     <AppShell title="Question workspace" subtitle="Decode it, plan it, name your formulas">
       <section className="surface-card space-y-4 p-5">
         <div className="grid grid-cols-3 gap-2">
@@ -607,6 +670,13 @@ function Workspace() {
                 {busy === "deconstruct" ? "Working…" : "Deconstruct"}
               </Button>
             </div>
+            <Button
+              variant="secondary"
+              onClick={() => setChatOpen(true)}
+              className="tap-lg w-full rounded-2xl border-2 border-border text-base"
+            >
+              <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
+            </Button>
           </section>
 
           {blocks && (
@@ -830,6 +900,70 @@ function Workspace() {
         </>
       )}
     </AppShell>
+
+    <Sheet open={chatOpen} onOpenChange={setChatOpen}>
+      <SheetContent side="bottom" className="flex h-[85vh] flex-col rounded-t-3xl border-2 border-border">
+        <SheetHeader className="text-left">
+          <SheetTitle>Ask a question</SheetTitle>
+          <SheetDescription>
+            About this question, or {subject || "this subject"} in general. Starts fresh on your next question.
+          </SheetDescription>
+        </SheetHeader>
+
+        <ScrollArea className="-mx-1 flex-1 px-1">
+          <div className="space-y-3 py-2">
+            {chatMessages.length === 0 && (
+              <p className="rounded-2xl border-2 border-dashed border-border bg-cream p-4 text-center text-sm text-muted-foreground">
+                Ask anything about this question, or about {subject || "this subject"}.
+              </p>
+            )}
+            {chatMessages.map((m, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "max-w-[85%] rounded-2xl border-2 p-3 text-base",
+                  m.role === "user"
+                    ? "ml-auto border-primary bg-primary/10"
+                    : "mr-auto border-border bg-cream",
+                )}
+              >
+                {m.content}
+              </div>
+            ))}
+            {chatBusy && (
+              <div className="mr-auto max-w-[85%] rounded-2xl border-2 border-border bg-cream p-3 text-base text-muted-foreground">
+                Thinking…
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        <div className="flex items-end gap-2 pt-2">
+          <Textarea
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void sendChatMessage();
+              }
+            }}
+            placeholder={`Ask about this question or ${subject || "this subject"}...`}
+            className="min-h-12 flex-1 resize-none rounded-2xl border-2 text-base"
+            disabled={chatBusy}
+          />
+          <Button
+            onClick={() => void sendChatMessage()}
+            disabled={chatBusy || !chatInput.trim()}
+            className="tap-lg rounded-2xl"
+            size="icon"
+          >
+            <Send className="h-5 w-5" />
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+    </>
   );
 }
 function normalizeForMatch(s: string): string {

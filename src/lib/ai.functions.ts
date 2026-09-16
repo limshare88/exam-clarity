@@ -650,8 +650,17 @@ export const generateReinforceQuestion = createServerFn({ method: "POST" })
       .order("click_count", { ascending: false })
       .limit(12);
 
+    const { data: doubts } = await supabase
+      .from("chat_doubts")
+      .select("doubt_tags")
+      .eq("user_id", userId)
+      .eq("subject", data.subject)
+      .order("created_at", { ascending: false })
+      .limit(15);
+
     const tags = Array.from(new Set((logs ?? []).flatMap((l) => l.struggle_tags ?? []))).slice(0, 8);
     const vocab = (words ?? []).map((w) => w.word);
+    const doubtTags = Array.from(new Set((doubts ?? []).flatMap((d) => d.doubt_tags ?? []))).slice(0, 8);
 
     const out = await callAI(
       `${TONE} You write ONE fresh practice exam question in the style of ${data.board || "a major"} exam board for ${data.subject}.
@@ -672,11 +681,13 @@ When a visual materially supports the question, include an exam schematic. Use o
 Never use a diagram kind from another subject's list.
 The renderer enforces crisp monochrome vectors on a clear background. Keep labels short, literal, widely readable, and essential only. Never request decorative images or colour. The kind value MUST be exactly one token from the subject's list above; do not invent synonyms such as free_body_diagram.
 For function_graph variant use quadratic, cubic, or exponential. For trig_graph use sin, cos, or tan. For apparatus use test_tube, beaker, or distillation. For other kinds use a short descriptive variant.
+Also target topics she asked the practice chat about (a real doubt she raised, so treat it seriously): ${doubtTags.length ? doubtTags.join(", ") : "none recorded yet"}.
 Reply as JSON with keys: question_text, marks (integer 2-6), subject_used (must be exactly "${data.subject}"), targeted (array of short strings), and schematic. schematic must be null when no diagram is needed, otherwise an object with exactly: kind, title, labels (0-4 short strings), variant, values (0-6 finite numbers). The question text must explicitly refer to the schematic when supplied.`,
       `Subject (the only allowed subject): ${data.subject}
 Exam board: ${data.board || "major UK board"}
 Struggle patterns recorded in ${data.subject}: ${tags.length ? tags.join(", ") : "none recorded yet, use general exam command-word practice"}
-Stumble-block vocabulary from ${data.subject}: ${vocab.length ? vocab.join(", ") : "none recorded yet"}`,
+Stumble-block vocabulary from ${data.subject}: ${vocab.length ? vocab.join(", ") : "none recorded yet"}
+Topics she asked the practice chat about in ${data.subject}: ${doubtTags.length ? doubtTags.join(", ") : "none recorded yet"}`,
     );
 
 
@@ -731,7 +742,7 @@ Stumble-block vocabulary from ${data.subject}: ${vocab.length ? vocab.join(", ")
       marks: Number(out["marks"] ?? 3),
       targeted: (out["targeted"] ?? []) as string[],
       schematic,
-      based_on: { tags, vocab },
+      based_on: { tags, vocab, doubtTags },
     };
   });
 
@@ -763,4 +774,93 @@ Struggle tags from marked strategies: ${(logs ?? []).flatMap((l) => l.struggle_t
 Recent strategy scores: ${(logs ?? []).map((l) => l.score).filter(Boolean).join(", ") || "none"}`,
     );
     return { summary: String(out["summary"] ?? "") };
+  });
+
+type ChatTurn = { role: "user" | "assistant"; content: string };
+
+/** Backs the "Ask a question" chat on the practice page. Scoped to the question she's
+ * currently viewing plus the subject generally -- not an open-ended assistant, and not
+ * restricted to only that one question either. */
+export const askPracticeQuestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      subject: string;
+      board: string;
+      questionText: string;
+      history: ChatTurn[];
+      message: string;
+    }) => input,
+  )
+  .handler(async ({ data }) => {
+    const history = data.history.slice(-12);
+    const transcript = history.map((t) => `${t.role === "user" ? "Student" : "You"}: ${t.content}`).join("\n");
+
+    const out = await callAI(
+      `${TONE} You are a friendly study helper inside an exam practice app, having a short back-and-forth chat with the student.
+
+SCOPE. You may discuss: (1) the exact exam question shown below, and (2) ${data.subject} generally -- related concepts, terminology, worked examples, other questions on the same topic. You must NOT discuss other subjects, general chit-chat, or anything unrelated to ${data.subject}. If she asks something out of scope, say plainly in one short sentence that you can only help with ${data.subject} here, then stop -- do not answer the off-topic part.
+
+HELPFULNESS. Explain clearly and directly. If she asks what the answer is or how to do a step, tell her -- do not withhold it or answer only with more questions. Keep replies short: a few sentences, or a short numbered list for steps. No long paragraphs.
+
+Reply as JSON with one key: reply (the plain-text message to show her, no markdown formatting).`,
+      `Exam question she is currently viewing:
+${data.questionText}
+
+Subject: ${data.subject}
+Exam board: ${data.board || "not specified"}
+
+Conversation so far:
+${transcript || "(nothing yet)"}
+
+Her new message: ${data.message}`,
+    );
+
+    return { reply: String(out["reply"] ?? "").trim() || "Sorry, I couldn't work that out. Can you ask again?" };
+  });
+
+/** Called when a per-question chat ends (question changes, or the panel closes with
+ * messages in it). Summarises what she was unsure about into a few short tags plus one
+ * sentence, and logs it -- generateReinforceQuestion reads chat_doubts the same way it
+ * already reads struggle_tags and vocab_stumble_blocks, so a doubt raised in chat can
+ * shape a future Reinforce question without her having to hit the same wall twice. */
+export const logChatDoubts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (input: {
+      subject: string;
+      board: string;
+      questionText: string;
+      messages: ChatTurn[];
+    }) => input,
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const userTurns = data.messages.filter((m) => m.role === "user");
+    if (!userTurns.length) return { logged: false };
+
+    const transcript = data.messages.map((t) => `${t.role === "user" ? "Student" : "Helper"}: ${t.content}`).join("\n");
+
+    const out = await callAI(
+      `You read a short chat between a student and a study helper about one ${data.subject} exam question, and summarise what she seemed unsure about for a teacher's records. Do not evaluate her or grade anything -- just name the topic(s).
+
+Reply as JSON with keys: doubt_tags (array of 1-4 short topic phrases, e.g. "circuit resistance", "balancing equations" -- specific to ${data.subject}, not generic like "confused" or "needs help"), summary (one short plain sentence describing what she asked about).`,
+      `Exam question: ${data.questionText}\n\nChat transcript:\n${transcript}`,
+    );
+
+    const tags = (Array.isArray(out["doubt_tags"]) ? out["doubt_tags"] : [])
+      .map((t) => String(t).slice(0, 60))
+      .filter(Boolean)
+      .slice(0, 4);
+
+    await supabase.from("chat_doubts").insert({
+      user_id: userId,
+      subject: data.subject,
+      board: data.board || null,
+      question_text: data.questionText.slice(0, 500),
+      doubt_tags: tags,
+      summary: String(out["summary"] ?? "").slice(0, 300) || null,
+    });
+
+    return { logged: true };
   });

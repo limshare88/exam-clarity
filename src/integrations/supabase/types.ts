@@ -295,6 +295,39 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_doubts: {
+        Row: {
+          board: string | null
+          created_at: string
+          doubt_tags: string[]
+          id: string
+          question_text: string | null
+          subject: string
+          summary: string | null
+          user_id: string
+        }
+        Insert: {
+          board?: string | null
+          created_at?: string
+          doubt_tags?: string[]
+          id?: string
+          question_text?: string | null
+          subject: string
+          summary?: string | null
+          user_id: string
+        }
+        Update: {
+          board?: string | null
+          created_at?: string
+          doubt_tags?: string[]
+          id?: string
+          question_text?: string | null
+          subject?: string
+          summary?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
