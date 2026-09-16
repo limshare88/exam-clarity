@@ -13,6 +13,7 @@ function getBackgroundImageAsset(itemId: string): string | null {
 // sky-blue fill -- a mascot-specific "home base" scene rather than a purchasable item.
 // Characters with no entry here keep the plain colour fallback.
 const DEFAULT_BACKGROUNDS: Record<string, string> = {
+  "mascot-chibi": "mika-bg-landing",
   "mascot-chibi-boy": "leo-bg-playground",
 };
 
