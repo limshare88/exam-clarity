@@ -73,6 +73,10 @@ export const SHOP_ITEMS = [
   { item_id: "bg-study", item_name: "Cozy Study Room", category: "Backgrounds", price: 90, emoji: "📚" },
   { item_id: "bg-night", item_name: "Starry Night Bedroom", category: "Backgrounds", price: 130, emoji: "🌙" },
   { item_id: "bg-classroom", item_name: "Bright Classroom", category: "Backgrounds", price: 110, emoji: "🏫" },
+  { item_id: "leo-bg-study", item_name: "Study Room", category: "Backgrounds", price: 90, emoji: "📖", avatar_id: "mascot-chibi-boy" },
+  { item_id: "leo-bg-cafe", item_name: "Cosy Cafe", category: "Backgrounds", price: 100, emoji: "☕", avatar_id: "mascot-chibi-boy" },
+  { item_id: "leo-bg-lab", item_name: "Science Lab", category: "Backgrounds", price: 120, emoji: "🧪", avatar_id: "mascot-chibi-boy" },
+  { item_id: "leo-bg-museum", item_name: "Dinosaur Museum", category: "Backgrounds", price: 140, emoji: "🦖", avatar_id: "mascot-chibi-boy" },
 ] as const;
 
 export type ShopItem = (typeof SHOP_ITEMS)[number];

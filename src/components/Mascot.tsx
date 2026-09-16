@@ -39,7 +39,7 @@ export function Mascot({ hat, outfit, accessory, toy, background, character, cla
         className,
       )}
     >
-      <BackgroundScene itemId={background} />
+      <BackgroundScene itemId={background} character={character} />
 
       <div className="relative aspect-[3/4] h-[85%]" aria-label={selected.name} role="img">
         <img

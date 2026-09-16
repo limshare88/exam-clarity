@@ -175,10 +175,47 @@ const SCENES: Record<string, () => React.ReactElement> = {
   "bg-classroom": ClassroomScene,
 };
 
-/** Renders the illustrated scene for a background item id, or null for the default
- * (plain colour) background when nothing is equipped. */
-export function BackgroundScene({ itemId }: { itemId: string | null | undefined }) {
-  const Scene = itemId ? SCENES[itemId] : undefined;
+// Illustrated photo-style backgrounds (as opposed to the flat SVG scenes above), loaded
+// the same way ShopIcons.tsx loads wardrobe art. Keyed by item_id, e.g. "leo-bg-museum".
+const backgroundImageModules = import.meta.glob<{ default: string }>(
+  "/src/assets/backgrounds/*.webp",
+  { eager: true, query: "?url" },
+);
+
+function getBackgroundImageAsset(itemId: string): string | null {
+  return backgroundImageModules[`/src/assets/backgrounds/${itemId}.webp`]?.default ?? null;
+}
+
+// Shown behind a character when no Background item is equipped, instead of the plain
+// sky-blue fill -- a mascot-specific "home base" scene rather than a purchasable item.
+// Characters with no entry here keep the plain colour fallback.
+const DEFAULT_BACKGROUNDS: Record<string, string> = {
+  "mascot-chibi-boy": "leo-bg-playground",
+};
+
+/** Renders the illustrated scene for a background item id: an image-based scene first,
+ * then a flat SVG scene, then (if nothing is equipped) the equipping character's default
+ * backdrop if it has one, else null for the plain colour fallback. */
+export function BackgroundScene({
+  itemId,
+  character,
+}: {
+  itemId: string | null | undefined;
+  character?: string | null | undefined;
+}) {
+  const resolvedId = itemId ?? DEFAULT_BACKGROUNDS[character ?? ""];
+  if (!resolvedId) return null;
+
+  const image = getBackgroundImageAsset(resolvedId);
+  if (image) {
+    return (
+      <div className="absolute inset-0" aria-hidden>
+        <img src={image} alt="" className="h-full w-full object-cover" />
+      </div>
+    );
+  }
+
+  const Scene = SCENES[resolvedId];
   if (!Scene) return null;
   return (
     <div className="absolute inset-0" aria-hidden>
