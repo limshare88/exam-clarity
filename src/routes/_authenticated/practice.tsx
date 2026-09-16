@@ -144,10 +144,15 @@ function Workspace() {
   const [recording, setRecording] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  // "" means the chat is for the whole (non-multi-part) question; otherwise it's the
+  // label of the specific sub-part this chat belongs to. Each part gets its own
+  // "Ask a question" button and its own fresh chat, per how this was asked for.
+  const [chatPartLabel, setChatPartLabel] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const chatMessagesRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
+  const chatContextRef = useRef<{ subject: string; board: string; questionText: string } | null>(null);
   const startedAt = useRef<number>(Date.now());
   const seen = useRef<Set<string>>(new Set());
 
@@ -162,24 +167,41 @@ function Workspace() {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
 
-  // A chat belongs to one question. When the question changes, flush whatever doubts
-  // came up in the outgoing chat (so Reinforce can draw on them later) and start fresh --
-  // she asked for a clean chat per question, not one long running thread.
+  function flushChatDoubts() {
+    const ctx = chatContextRef.current;
+    if (ctx && chatMessagesRef.current.length) {
+      void logDoubts({ data: { ...ctx, messages: chatMessagesRef.current } });
+    }
+  }
+
+  // Opens (or switches to) the chat for one specific part -- flushing whatever doubts
+  // came up in whichever chat was open before, then starting completely fresh. Every
+  // part's chat is its own clean conversation, never shared with another part or carried
+  // over to the next question.
+  function openChatFor(partLabel: string, questionText: string) {
+    flushChatDoubts();
+    chatContextRef.current = active ? { subject: active.subject, board: active.board, questionText } : null;
+    setChatPartLabel(partLabel);
+    setChatMessages([]);
+    setChatInput("");
+    setChatOpen(true);
+  }
+
+  // Moving to a different question always closes out whatever chat was open, flushing
+  // its doubts first.
   useEffect(() => {
-    const ctx = active ? { subject: active.subject, board: active.board, questionText: active.question_text } : null;
     return () => {
-      if (ctx && chatMessagesRef.current.length) {
-        void logDoubts({ data: { ...ctx, messages: chatMessagesRef.current } });
-      }
+      flushChatDoubts();
       setChatMessages([]);
       setChatOpen(false);
+      setChatPartLabel(null);
       setChatInput("");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.question_text]);
 
   async function sendChatMessage() {
-    if (!active || chatBusy) return;
+    if (!chatContextRef.current || chatBusy) return;
     const message = chatInput.trim();
     if (!message) return;
     const nextMessages = [...chatMessages, { role: "user" as const, content: message }];
@@ -189,9 +211,9 @@ function Workspace() {
     try {
       const res = await askQuestion({
         data: {
-          subject: active.subject,
-          board: active.board,
-          questionText: active.question_text,
+          subject: chatContextRef.current.subject,
+          board: chatContextRef.current.board,
+          questionText: chatContextRef.current.questionText,
           history: chatMessages,
           message,
         },
@@ -443,17 +465,19 @@ function Workspace() {
         }))
       : [{ label: "", question_text: active.question_text, strategy }];
 
-
-    const combined = multiPart
-      ? payloadParts
-          .map((p) => `${p.label}\n${p.strategy.trim() || "(left blank)"}`)
-          .join("\n\n")
-      : strategy;
-
-    if (combined.replace(/\(left blank\)/g, "").trim().length < 10) {
-      toast.error("Write a couple of steps first.");
+    const unattempted = payloadParts.filter((p) => p.strategy.trim().length === 0);
+    if (unattempted.length > 0) {
+      toast.error(
+        multiPart
+          ? `Attempt every part first (${unattempted.map((p) => p.label).join(", ")} still blank). If you're not sure how, type "not sure" there.`
+          : 'Write your strategy first. If you\'re not sure how, type "not sure".',
+      );
       return;
     }
+
+    const combined = multiPart
+      ? payloadParts.map((p) => `${p.label}\n${p.strategy.trim()}`).join("\n\n")
+      : strategy;
 
     setBusy("coach");
     try {
@@ -670,13 +694,6 @@ function Workspace() {
                 {busy === "deconstruct" ? "Working…" : "Deconstruct"}
               </Button>
             </div>
-            <Button
-              variant="secondary"
-              onClick={() => setChatOpen(true)}
-              className="tap-lg w-full rounded-2xl border-2 border-border text-base"
-            >
-              <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
-            </Button>
           </section>
 
           {blocks && (
@@ -763,6 +780,15 @@ function Workspace() {
                     )}
                     {recording === part.label ? "Listening…" : `Speak ${part.label}`}
                   </Button>
+                  {feedback?.part_feedback?.some((pf) => pf.label === part.label) && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => openChatFor(part.label, [part.context, part.text].filter(Boolean).join("\n"))}
+                      className="tap-lg w-full rounded-2xl border-2 border-border text-base"
+                    >
+                      <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
+                    </Button>
+                  )}
                 </div>
               ))
             ) : (
@@ -784,6 +810,15 @@ function Workspace() {
                   {recording ? <Square className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}
                   {recording ? "Listening…" : "Speak it"}
                 </Button>
+                {feedback && !feedback.part_feedback?.length && active && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => openChatFor("", active.question_text)}
+                    className="tap-lg w-full rounded-2xl border-2 border-border text-base"
+                  >
+                    <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
+                  </Button>
+                )}
               </>
             )}
 
@@ -820,7 +855,7 @@ function Workspace() {
                     <FeedbackBlock title="🧠 Logic" body={part.logic_feedback} />
                     <FeedbackBlock title="🔢 Sequencing" body={part.sequencing_feedback} />
                     <FeedbackBlock title="📐 Formulas & rules" body={part.formula_feedback} />
-                    {part.model_steps?.length > 0 && (
+                    {isNotSure(partStrategies[part.label] ?? "") && part.model_steps?.length > 0 && (
                       <div className="rounded-2xl border-2 border-border bg-card p-4">
                         <p className="font-bold">✅ The correct step order</p>
                         <ol className="mt-2 space-y-3">
@@ -854,7 +889,7 @@ function Workspace() {
                   <FeedbackBlock title="🧠 Logic" body={feedback.logic_feedback} />
                   <FeedbackBlock title="🔢 Sequencing" body={feedback.sequencing_feedback} />
                   <FeedbackBlock title="📐 Formulas & rules" body={feedback.formula_feedback} />
-                  {feedback.model_steps?.length > 0 && (
+                  {isNotSure(strategy) && feedback.model_steps?.length > 0 && (
                     <div className="rounded-2xl border-2 border-border bg-cream p-4">
                       <p className="font-bold">✅ The correct step order</p>
                       <ol className="mt-2 space-y-3">
@@ -904,9 +939,9 @@ function Workspace() {
     <Sheet open={chatOpen} onOpenChange={setChatOpen}>
       <SheetContent side="bottom" className="flex h-[85vh] flex-col rounded-t-3xl border-2 border-border">
         <SheetHeader className="text-left">
-          <SheetTitle>Ask a question</SheetTitle>
+          <SheetTitle>Ask a question{chatPartLabel ? ` — ${chatPartLabel}` : ""}</SheetTitle>
           <SheetDescription>
-            About this question, or {subject || "this subject"} in general. Starts fresh on your next question.
+            About {chatPartLabel ? "this part" : "this question"}, or {chatContextRef.current?.subject || subject || "this subject"} in general.
           </SheetDescription>
         </SheetHeader>
 
@@ -914,7 +949,7 @@ function Workspace() {
           <div className="space-y-3 py-2">
             {chatMessages.length === 0 && (
               <p className="rounded-2xl border-2 border-dashed border-border bg-cream p-4 text-center text-sm text-muted-foreground">
-                Ask anything about this question, or about {subject || "this subject"}.
+                Ask anything about {chatPartLabel ? "this part" : "this question"}, or about {chatContextRef.current?.subject || subject || "this subject"}.
               </p>
             )}
             {chatMessages.map((m, i) => (
@@ -948,7 +983,7 @@ function Workspace() {
                 void sendChatMessage();
               }
             }}
-            placeholder={`Ask about this question or ${subject || "this subject"}...`}
+            placeholder={`Ask about ${chatPartLabel ? "this part" : "this question"}...`}
             className="min-h-12 flex-1 resize-none rounded-2xl border-2 text-base"
             disabled={chatBusy}
           />
@@ -968,6 +1003,15 @@ function Workspace() {
 }
 function normalizeForMatch(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/** True when her answer box just says she doesn't know how to do it (any casing,
+ * with or without a space). The correct-step-order reveal is gated behind this: it only
+ * shows once she's said she's not sure, not automatically alongside every attempt --
+ * otherwise checking her thinking would just hand her the answer every time regardless
+ * of whether she tried. */
+function isNotSure(text: string): boolean {
+  return /^\s*not\s*sure\s*[.!]?\s*$/i.test(text);
 }
 
 /** Anchors shorter than this are too likely to appear by coincidence in the wrong part
