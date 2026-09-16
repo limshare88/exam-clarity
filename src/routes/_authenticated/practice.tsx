@@ -780,15 +780,6 @@ function Workspace() {
                     )}
                     {recording === part.label ? "Listening…" : `Speak ${part.label}`}
                   </Button>
-                  {feedback?.part_feedback?.some((pf) => pf.label === part.label) && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => openChatFor(part.label, [part.context, part.text].filter(Boolean).join("\n"))}
-                      className="tap-lg w-full rounded-2xl border-2 border-border text-base"
-                    >
-                      <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
-                    </Button>
-                  )}
                 </div>
               ))
             ) : (
@@ -810,15 +801,6 @@ function Workspace() {
                   {recording ? <Square className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}
                   {recording ? "Listening…" : "Speak it"}
                 </Button>
-                {feedback && !feedback.part_feedback?.length && active && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => openChatFor("", active.question_text)}
-                    className="tap-lg w-full rounded-2xl border-2 border-border text-base"
-                  >
-                    <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
-                  </Button>
-                )}
               </>
             )}
 
@@ -882,6 +864,16 @@ function Workspace() {
                         </ul>
                       </div>
                     )}
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        const own = answerParts.find((ap) => normalizeForMatch(ap.label) === normalizeForMatch(part.label));
+                        openChatFor(part.label, [own?.context, own?.text].filter(Boolean).join("\n"));
+                      }}
+                      className="tap-lg w-full rounded-2xl border-2 border-border text-base"
+                    >
+                      <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
+                    </Button>
                   </div>
                 ))
               ) : (
@@ -915,6 +907,15 @@ function Workspace() {
                         ))}
                       </ul>
                     </div>
+                  )}
+                  {active && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => openChatFor("", active.question_text)}
+                      className="tap-lg w-full rounded-2xl border-2 border-border text-base"
+                    >
+                      <MessageCircleQuestion className="mr-2 h-5 w-5" /> Ask a question
+                    </Button>
                   )}
                 </>
               )}
