@@ -5,6 +5,135 @@ import type { ExamSchematicData, SchematicKind } from "@/components/ExamSchemati
 
 const MODEL = "google/gemini-3.8-flash";
 
+// Dual-AI routing for the subject-aware coaching features (coach, deconstruct, reinforce,
+// chat) -- English goes to Claude, every other subject goes to OpenAI. This is step one of
+// moving off the shared Lovable AI gateway; extraction, mark-scheme reading, vocab lookup,
+// and the stumble-block summary are NOT part of this migration slice yet and still use the
+// callAI/MODEL pair above.
+const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+const OPENAI_MODEL = "gpt-5.4-mini";
+
+function isEnglishSubject(subject: string): boolean {
+  return subject.toLowerCase().includes("english");
+}
+
+/** Claude has no native "always return a JSON object" mode the way OpenAI does -- the
+ * system prompt asks for JSON only, but a model can still wrap it in a ```json fence or
+ * add a stray sentence around it despite that instruction. Tries a straight parse first,
+ * then strips code fences, then falls back to the first {...} block in the text. */
+function parseJsonLoose(text: string): Record<string, unknown> {
+  const direct = text.trim();
+  try {
+    return JSON.parse(direct) as Record<string, unknown>;
+  } catch {
+    // fall through
+  }
+  const fenced = direct.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  try {
+    return JSON.parse(fenced) as Record<string, unknown>;
+  } catch {
+    // fall through
+  }
+  const match = direct.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      return JSON.parse(match[0]) as Record<string, unknown>;
+    } catch {
+      // fall through
+    }
+  }
+  return { raw: text };
+}
+
+async function callClaude(system: string, user: string): Promise<Record<string, unknown>> {
+  const key = process.env["ANTHROPIC_API_KEY"];
+  if (!key) throw new Error("The English coach is not configured yet (missing ANTHROPIC_API_KEY).");
+
+  let res: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 4096,
+        system: `${system}\n\nReply with ONLY a single JSON object. No markdown code fences, no prose before or after it.`,
+        messages: [{ role: "user", content: user }],
+      }),
+    });
+    if (res.ok || (res.status !== 429 && res.status < 500)) break;
+    const retryAfter = Number(res.headers.get("Retry-After") ?? 0);
+    await new Promise((resolve) => setTimeout(resolve, Math.max(retryAfter * 1000, 800 * 2 ** attempt)));
+  }
+
+  if (!res) throw new Error("The AI helper could not start.");
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 429) throw new Error("The helper is busy right now. Please try again in a moment.");
+    if (res.status === 401) throw new Error("The English coach's API key was rejected. Check ANTHROPIC_API_KEY.");
+    throw new Error(`Claude request failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+
+  const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+  const textBlock = json.content?.find((b) => b.type === "text")?.text ?? "{}";
+  return parseJsonLoose(textBlock);
+}
+
+async function callOpenAI(system: string, user: string): Promise<Record<string, unknown>> {
+  const key = process.env["OPENAI_API_KEY"];
+  if (!key) throw new Error("The coach is not configured yet (missing OPENAI_API_KEY).");
+
+  let res: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      }),
+    });
+    if (res.ok || (res.status !== 429 && res.status < 500)) break;
+    const retryAfter = Number(res.headers.get("Retry-After") ?? 0);
+    await new Promise((resolve) => setTimeout(resolve, Math.max(retryAfter * 1000, 800 * 2 ** attempt)));
+  }
+
+  if (!res) throw new Error("The AI helper could not start.");
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 429) throw new Error("The helper is busy right now. Please try again in a moment.");
+    if (res.status === 401) throw new Error("The coach's API key was rejected. Check OPENAI_API_KEY.");
+    throw new Error(`OpenAI request failed (${res.status}): ${text.slice(0, 200)}`);
+  }
+
+  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const responseContent = json.choices?.[0]?.message?.content ?? "{}";
+  try {
+    return JSON.parse(responseContent) as Record<string, unknown>;
+  } catch {
+    return { raw: responseContent };
+  }
+}
+
+/** Routes a subject-aware coaching call to Claude (English) or OpenAI (everything else).
+ * Used by coachStrategy, deconstructQuestion, generateReinforceQuestion,
+ * askPracticeQuestion, and logChatDoubts -- the features named for this first migration
+ * slice off the shared Lovable AI gateway. */
+async function callSubjectAI(subject: string, system: string, user: string): Promise<Record<string, unknown>> {
+  return isEnglishSubject(subject) ? callClaude(system, user) : callOpenAI(system, user);
+}
+
 type MediaInput = { mimeType: string; data: string };
 
 async function callAI(
@@ -383,7 +512,8 @@ export const deconstructQuestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { questionText: string; subject: string }) => input)
   .handler(async ({ data }) => {
-    const out = await callAI(
+    const out = await callSubjectAI(
+      data.subject,
       `${TONE} You break dense exam questions into three clean blocks. Reply as JSON with keys: core_goal (one short sentence), command_words (array of {word, meaning}), facts (array of short strings holding given data, values, units or key details).`,
       `Subject: ${data.subject}\nExam question:\n${data.questionText}`,
     );
@@ -537,7 +667,8 @@ export const coachStrategy = createServerFn({ method: "POST" })
           .join("\n\n")
       : `Question (${data.marks} marks):\n${data.questionText}\n\nHer step-by-step strategy:\n${data.strategy}`;
 
-    const out = await callAI(
+    const out = await callSubjectAI(
+      subject,
       `${TONE} You are a Formula-Focused Coach applying the official published marking conventions, command-word definitions, assessment objectives, and method-mark rules used by ${board || "the selected exam board"} for ${subject}.
 Treat the named board as binding. Do not blend in conventions from another board. Interpret command words exactly as that board does. Allocate credit in proportion to this question's ${data.marks} available marks, including method, accuracy, independent, consequential, or equivalent marks where that board uses them.
 You judge ONLY: (1) the thinking logic, (2) the sequencing of steps, (3) whether the correct formulas, rules or techniques were named.
@@ -663,7 +794,8 @@ export const generateReinforceQuestion = createServerFn({ method: "POST" })
     const vocab = (words ?? []).map((w) => w.word);
     const doubtTags = Array.from(new Set((doubts ?? []).flatMap((d) => d.doubt_tags ?? []))).slice(0, 8);
 
-    const out = await callAI(
+    const out = await callSubjectAI(
+      data.subject,
       `${TONE} You write ONE fresh practice exam question in the style of ${data.board || "a major"} exam board for ${data.subject}.
 
 STRICT SUBJECT ISOLATION — this is the highest priority rule.
@@ -797,7 +929,8 @@ export const askPracticeQuestion = createServerFn({ method: "POST" })
     const history = data.history.slice(-12);
     const transcript = history.map((t) => `${t.role === "user" ? "Student" : "You"}: ${t.content}`).join("\n");
 
-    const out = await callAI(
+    const out = await callSubjectAI(
+      data.subject,
       `${TONE} You are a friendly study helper inside an exam practice app, having a short back-and-forth chat with the student.
 
 SCOPE. You may discuss: (1) the exact exam question shown below, and (2) ${data.subject} generally -- related concepts, terminology, worked examples, other questions on the same topic. You must NOT discuss other subjects, general chit-chat, or anything unrelated to ${data.subject}. If she asks something out of scope, say plainly in one short sentence that you can only help with ${data.subject} here, then stop -- do not answer the off-topic part.
@@ -842,7 +975,8 @@ export const logChatDoubts = createServerFn({ method: "POST" })
 
     const transcript = data.messages.map((t) => `${t.role === "user" ? "Student" : "Helper"}: ${t.content}`).join("\n");
 
-    const out = await callAI(
+    const out = await callSubjectAI(
+      data.subject,
       `You read a short chat between a student and a study helper about one ${data.subject} exam question, and summarise what she seemed unsure about for a teacher's records. Do not evaluate her or grade anything -- just name the topic(s).
 
 Reply as JSON with keys: doubt_tags (array of 1-4 short topic phrases, e.g. "circuit resistance", "balancing equations" -- specific to ${data.subject}, not generic like "confused" or "needs help"), summary (one short plain sentence describing what she asked about).`,
