@@ -84,7 +84,7 @@ function Welcome() {
           </p>
         </div>
 
-        <Mascot mood="calm" background="bg-study" />
+        <Mascot mood="calm" />
 
         <div className="surface-card space-y-5 p-6">
           <Button

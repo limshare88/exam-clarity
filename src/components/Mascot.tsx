@@ -14,7 +14,7 @@ type MascotProps = {
   accessory?: string | null | undefined;
   /** Item id of the equipped desk toy, e.g. "toy-cat". */
   toy?: string | null | undefined;
-  /** Item id of the equipped background scene, e.g. "bg-study". */
+  /** Item id of the equipped background scene, e.g. "leo-bg-museum". */
   background?: string | null | undefined;
   mood?: "happy" | "cheer" | "calm";
   character?: string | null | undefined;
