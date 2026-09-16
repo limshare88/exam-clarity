@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useProfile, useRefreshProfile } from "@/hooks/useProfile";
 import { AppShell } from "@/components/AppShell";
 import { Mascot } from "@/components/Mascot";
-import { getMascotLookAsset, ShopIcon } from "@/components/ShopIcons";
+import { ShopIcon } from "@/components/ShopIcons";
 import { BackgroundScene } from "@/components/BackgroundScenes";
 import { CHILD_AVATARS, SHOP_ITEMS, type ShopItem } from "@/lib/subjects";
 import { Button } from "@/components/ui/button";
@@ -263,14 +263,6 @@ function Shop() {
               {visibleItems.filter((item) => item.category === category).map((item) => {
                 const isOwned = owned.has(item.item_id);
                 const isEquipped = equipped[category] === item.item_id;
-                const wearablePreview = category === "Hats" || category === "Accessories"
-                  ? getMascotLookAsset(
-                      activeAvatar,
-                      equipped["Outfits"],
-                      category === "Hats" ? item.item_id : equipped["Hats"],
-                      category === "Accessories" ? item.item_id : equipped["Accessories"],
-                    )
-                  : null;
                 return (
                   <article key={item.item_id} className={cn("relative flex min-w-0 flex-col items-center gap-2 rounded-2xl border-2 p-3 text-center", isEquipped ? "border-primary bg-primary/10 shadow-md" : "border-border bg-cream")}>
                     {!isOwned && <span className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-card text-foreground shadow-md" aria-label="Locked"><Lock className="h-4 w-4" /></span>}
@@ -278,8 +270,6 @@ function Shop() {
                     <div className="relative flex h-28 w-full items-center justify-center overflow-hidden rounded-xl bg-card/70">
                       {category === "Backgrounds" ? (
                         <BackgroundScene itemId={item.item_id} />
-                      ) : wearablePreview ? (
-                        <img src={wearablePreview} alt="" width={896} height={1200} loading="lazy" className="h-full w-full object-contain" />
                       ) : (
                         <ShopIcon itemId={item.item_id} character={activeAvatar} className="h-24 w-24" />
                       )}
