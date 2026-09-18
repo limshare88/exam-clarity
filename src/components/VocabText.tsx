@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { lookupWord } from "@/lib/ai.functions";
+import { splitMathSegments, MathSpan } from "@/components/MathText";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,7 @@ export function VocabText({ text, subject }: { text: string; subject: string }) 
   const [card, setCard] = useState<Card | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const sentences = text.split(/(\s+)/);
+  const segments = splitMathSegments(text);
 
   async function handleWord(raw: string) {
     const clean = raw.replace(/[^A-Za-z'-]/g, "");
@@ -39,18 +40,24 @@ export function VocabText({ text, subject }: { text: string; subject: string }) 
   return (
     <>
       <p className="reading-text text-lg text-foreground">
-        {sentences.map((token, i) =>
-          /^\s+$/.test(token) ? (
-            <span key={i}>{token}</span>
+        {segments.map((segment, segIndex) =>
+          segment.type === "math" ? (
+            <MathSpan key={segIndex} latex={segment.content} />
           ) : (
-            <button
-              key={i}
-              type="button"
-              onClick={() => handleWord(token)}
-              className="rounded-md px-0.5 py-0.5 text-left underline decoration-dotted decoration-primary/50 underline-offset-8 transition-colors hover:bg-mint focus-visible:bg-mint focus-visible:outline-none"
-            >
-              {token}
-            </button>
+            segment.content.split(/(\s+)/).map((token, i) =>
+              /^\s+$/.test(token) ? (
+                <span key={`${segIndex}-${i}`}>{token}</span>
+              ) : token.length === 0 ? null : (
+                <button
+                  key={`${segIndex}-${i}`}
+                  type="button"
+                  onClick={() => handleWord(token)}
+                  className="rounded-md px-0.5 py-0.5 text-left underline decoration-dotted decoration-primary/50 underline-offset-8 transition-colors hover:bg-mint focus-visible:bg-mint focus-visible:outline-none"
+                >
+                  {token}
+                </button>
+              ),
+            )
           ),
         )}
       </p>

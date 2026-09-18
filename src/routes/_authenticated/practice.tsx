@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useProfile, useRefreshProfile, awardCoins } from "@/hooks/useProfile";
 import { AppShell } from "@/components/AppShell";
 import { VocabText } from "@/components/VocabText";
+import { MathText } from "@/components/MathText";
 import { askPracticeQuestion, coachStrategy, deconstructQuestion, generateReinforceQuestion, logChatDoubts } from "@/lib/ai.functions";
 import { subjectStrategyRule } from "@/lib/subjects";
 import { cn } from "@/lib/utils";
@@ -752,10 +753,8 @@ function Workspace() {
                       </span>
                     )}
                   </div>
-                  {part.context && (
-                    <p className="reading-text text-sm text-muted-foreground">{part.context}</p>
-                  )}
-                  <p className="reading-text text-sm text-muted-foreground">{part.text}</p>
+                  {part.context && <MathText text={part.context} className="reading-text text-sm text-muted-foreground" />}
+                  <MathText text={part.text} className="reading-text text-sm text-muted-foreground" />
 
                   <Textarea
                     rows={5}
