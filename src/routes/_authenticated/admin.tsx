@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { extractExamQuestions, extractMarkScheme, MARK_SCHEME_NAME_PATTERN } from "@/lib/ai.functions";
 import { cropAndUploadDiagram, renderPaperPages, type DiagramBox } from "@/lib/diagram-crop";
 import { FileSearch, Trash2 } from "lucide-react";
+import { cleanPaperLabel, normalizePaperLabel } from "@/lib/paper";
 
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -325,12 +326,10 @@ function Admin() {
           if (cropped.length) diagramsByQuestion.set(i, cropped);
         }
 
-        // Deliberately does NOT fall back to result.paper_type -- that's whatever text
-        // is literally printed on the paper's own cover (e.g. "Pure Mathematics P1" for
-        // Edexcel units), which doesn't match the clean "Paper 1"/"Paper 2" convention
-        // PaperPicker offers and Practice's paper filter is meant to show. Leaving this
-        // field blank now means no paper type at all, rather than a messy raw title.
-        const chosenPaper = paperType.trim() || null;
+        // Typed/picked value wins. If blank, use the extracted cover text ONLY when it clearly
+        // names a paper number (e.g. "Pure Mathematics P1" -> "Paper 1"); otherwise store none
+        // rather than a messy raw title.
+        const chosenPaper = normalizePaperLabel(paperType) || cleanPaperLabel(result.paper_type) || null;
         const chosenYear = Number(examYear) || result.exam_year || null;
 
         const rows = result.questions.map((question, index) => {
@@ -531,7 +530,7 @@ function Admin() {
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          Leave Paper and Year empty to let the reader take them from the paper itself.
+          Pick the Paper so it appears in the Practice tab. Leave Year empty to let the reader take it from the paper itself.
         </p>
 
 
@@ -551,16 +550,16 @@ function Admin() {
         {(papers ?? []).map((paper) => (
           <div
             key={paper.file_path}
-            className="flex flex-col gap-3 rounded-2xl border-2 border-border bg-cream p-4 sm:flex-row sm:items-center sm:justify-between"
+            className="flex flex-col gap-3 rounded-2xl border-2 border-border bg-cream p-4"
           >
             <div className="min-w-0">
-              <p className="truncate font-semibold">{paper.original_name}</p>
+              <p className="font-semibold [overflow-wrap:anywhere]">{paper.original_name}</p>
               <p className="text-sm text-muted-foreground">
                 {paper.subject} · {paper.count} question{paper.count === 1 ? "" : "s"} ·{" "}
                 {format(new Date(paper.created_at), "d MMM yyyy")}
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
                 onClick={() => setFixPaper(paper)}

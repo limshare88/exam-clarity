@@ -40,6 +40,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Mic, Volume2, Square, MessageCircleQuestion, Send } from "lucide-react";
 import { toast } from "sonner";
+import { normalizePaperLabel } from "@/lib/paper";
 
 export const Route = createFileRoute("/_authenticated/practice")({
   head: () => ({
@@ -248,12 +249,15 @@ function Workspace() {
 
   // Paper and Year choices come from what actually exists for this subject.
   const paperOptions = useMemo(
-    () => Array.from(new Set((bank ?? []).map((q) => q.paper_type).filter(Boolean) as string[])).sort(),
+    () =>
+      Array.from(
+        new Set((bank ?? []).map((q) => normalizePaperLabel(q.paper_type)).filter(Boolean) as string[]),
+      ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
     [bank],
   );
   const yearOptions = useMemo(() => {
     const years = (bank ?? [])
-      .filter((q) => paperFilter === "all" || q.paper_type === paperFilter)
+      .filter((q) => paperFilter === "all" || normalizePaperLabel(q.paper_type) === paperFilter)
       .map((q) => q.exam_year)
       .filter((y): y is number => typeof y === "number");
     return Array.from(new Set(years)).sort((a, b) => b - a);
@@ -263,7 +267,7 @@ function Workspace() {
     () =>
       (bank ?? []).filter(
         (q) =>
-          (paperFilter === "all" || q.paper_type === paperFilter) &&
+          (paperFilter === "all" || normalizePaperLabel(q.paper_type) === paperFilter) &&
           (yearFilter === "all" || String(q.exam_year ?? "") === yearFilter),
       ),
     [bank, paperFilter, yearFilter],
