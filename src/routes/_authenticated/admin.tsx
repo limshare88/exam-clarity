@@ -325,7 +325,12 @@ function Admin() {
           if (cropped.length) diagramsByQuestion.set(i, cropped);
         }
 
-        const chosenPaper = paperType.trim() || result.paper_type || null;
+        // Deliberately does NOT fall back to result.paper_type -- that's whatever text
+        // is literally printed on the paper's own cover (e.g. "Pure Mathematics P1" for
+        // Edexcel units), which doesn't match the clean "Paper 1"/"Paper 2" convention
+        // PaperPicker offers and Practice's paper filter is meant to show. Leaving this
+        // field blank now means no paper type at all, rather than a messy raw title.
+        const chosenPaper = paperType.trim() || null;
         const chosenYear = Number(examYear) || result.exam_year || null;
 
         const rows = result.questions.map((question, index) => {
@@ -546,7 +551,7 @@ function Admin() {
         {(papers ?? []).map((paper) => (
           <div
             key={paper.file_path}
-            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-border bg-cream p-4"
+            className="flex flex-col gap-3 rounded-2xl border-2 border-border bg-cream p-4 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="min-w-0">
               <p className="truncate font-semibold">{paper.original_name}</p>
@@ -555,7 +560,7 @@ function Admin() {
                 {format(new Date(paper.created_at), "d MMM yyyy")}
               </p>
             </div>
-            <div className="flex shrink-0 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
               <Button
                 variant="secondary"
                 onClick={() => setFixPaper(paper)}
