@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
-import chibiGirlAsset from "@/assets/mascot-chibi-girl.png.asset.json";
-import chibiBoyAsset from "@/assets/mascot-chibi-boy.png.asset.json";
-import longEarAsset from "@/assets/mascot-long-ear.png.asset.json";
-import helperRobotAsset from "@/assets/mascot-helper-robot.png.asset.json";
+import chibiGirlSrc from "@/assets/mascot-chibi-girl.png";
+import chibiBoySrc from "@/assets/mascot-chibi-boy.png";
+import longEarSrc from "@/assets/mascot-long-ear.png";
+import helperRobotSrc from "@/assets/mascot-helper-robot.png";
 import { getMascotLookAsset, ShopIcon } from "@/components/ShopIcons";
 import { BackgroundScene } from "@/components/BackgroundScenes";
 
@@ -22,12 +22,12 @@ type MascotProps = {
 };
 
 const CHARACTERS: Record<string, { src: string; name: string }> = {
-  "mascot-chibi": { src: chibiGirlAsset.url, name: "Mika, the chibi learner" },
-  "mascot-chibi-boy": { src: chibiBoyAsset.url, name: "Leo, the chibi learner" },
-  "mascot-long-ear": { src: longEarAsset.url, name: "Mallow, the long-eared companion" },
-  "mascot-robot": { src: helperRobotAsset.url, name: "Pip, the helper robot" },
+  "mascot-chibi": { src: chibiGirlSrc, name: "Mika, the chibi learner" },
+  "mascot-chibi-boy": { src: chibiBoySrc, name: "Leo, the chibi learner" },
+  "mascot-long-ear": { src: longEarSrc, name: "Mallow, the long-eared companion" },
+  "mascot-robot": { src: helperRobotSrc, name: "Pip, the helper robot" },
 };
-const DEFAULT_CHARACTER = { src: chibiGirlAsset.url, name: "Mika, the chibi learner" };
+const DEFAULT_CHARACTER = { src: chibiGirlSrc, name: "Mika, the chibi learner" };
 
 export function Mascot({ hat, outfit, accessory, toy, background, character, className }: MascotProps) {
   const selected = CHARACTERS[character ?? ""] ?? DEFAULT_CHARACTER;
