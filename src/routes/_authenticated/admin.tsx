@@ -71,6 +71,7 @@ function Admin() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [duplicateName, setDuplicateName] = useState<string | null>(null);
+  const [duplicateKind, setDuplicateKind] = useState<"paper" | "scheme">("paper");
   const extractQuestions = useServerFn(extractExamQuestions);
   const readMarkScheme = useServerFn(extractMarkScheme);
 
@@ -253,6 +254,20 @@ function Admin() {
         .limit(1);
       if (seen && seen.length) {
         setBusy(false);
+        setDuplicateKind("paper");
+        setDuplicateName(file.name);
+        return;
+      }
+      // Same check for marking schemes, so re-uploading one never silently replaces it.
+      const { data: seenScheme } = await supabase
+        .from("mark_schemes")
+        .select("id")
+        .eq("user_id", uid)
+        .eq("original_name", file.name)
+        .limit(1);
+      if (seenScheme && seenScheme.length) {
+        setBusy(false);
+        setDuplicateKind("scheme");
         setDuplicateName(file.name);
         return;
       }
@@ -635,10 +650,14 @@ function Admin() {
       <Dialog open={duplicateName !== null} onOpenChange={(o) => !o && setDuplicateName(null)}>
         <DialogContent className="rounded-3xl border-2 border-border">
           <DialogHeader>
-            <DialogTitle>⚠️ This exam paper has already been uploaded to your question bank.</DialogTitle>
+            <DialogTitle>
+              {duplicateKind === "scheme"
+                ? "⚠️ This marking scheme has already been uploaded."
+                : "⚠️ This exam paper has already been uploaded to your question bank."}
+            </DialogTitle>
             <DialogDescription>
-              {duplicateName} is already saved, so nothing new was added. Delete the existing paper
-              first if you want to read it again.
+              {duplicateName} is already saved, so nothing new was added. Delete the existing{" "}
+              {duplicateKind === "scheme" ? "marking scheme" : "paper"} first if you want to read it again.
             </DialogDescription>
           </DialogHeader>
           <Button
