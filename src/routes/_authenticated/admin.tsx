@@ -30,7 +30,8 @@ import {
 import { toast } from "sonner";
 import { extractExamQuestions, extractMarkScheme, MARK_SCHEME_NAME_PATTERN } from "@/lib/ai.functions";
 import { cropAndUploadDiagram, renderPaperPages, type DiagramBox } from "@/lib/diagram-crop";
-import { FileSearch, Trash2 } from "lucide-react";
+import { ChevronDown, FileSearch, Trash2 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cleanPaperLabel, normalizePaperLabel } from "@/lib/paper";
 
 
@@ -165,6 +166,7 @@ function Admin() {
     file_path: string;
     original_name: string;
     subject: string;
+    exam_year: number | null;
     count: number;
     created_at: string;
   };
@@ -174,7 +176,7 @@ function Admin() {
     queryFn: async (): Promise<Paper[]> => {
       const { data } = await supabase
         .from("exam_questions")
-        .select("file_path, subject, metadata, created_at")
+        .select("file_path, subject, exam_year, metadata, created_at")
         .not("file_path", "is", null)
         .order("created_at", { ascending: false })
         .limit(500);
@@ -186,12 +188,14 @@ function Admin() {
         const existing = grouped.get(path);
         if (existing) {
           existing.count += 1;
+          if (existing.exam_year == null && typeof row.exam_year === "number") existing.exam_year = row.exam_year;
           continue;
         }
         grouped.set(path, {
           file_path: path,
           original_name: String(meta["original_name"] ?? path.split("/").pop() ?? "Uploaded paper"),
           subject: row.subject,
+          exam_year: typeof row.exam_year === "number" ? row.exam_year : null,
           count: 1,
           created_at: row.created_at,
         });
@@ -547,9 +551,13 @@ function Admin() {
             Questions are saved automatically when a paper is read.
           </p>
         </div>
-        {(papers ?? []).map((paper) => (
+        <GroupedHistory
+          items={papers ?? []}
+          getSubject={(p) => p.subject}
+          getYear={(p) => p.exam_year}
+          getKey={(p) => p.file_path}
+          renderItem={(paper) => (
           <div
-            key={paper.file_path}
             className="flex flex-col gap-3 rounded-2xl border-2 border-border bg-cream p-4"
           >
             <div className="min-w-0">
@@ -577,7 +585,8 @@ function Admin() {
               </Button>
             </div>
           </div>
-        ))}
+          )}
+        />
         {!papers?.length && <p className="text-muted-foreground">No papers uploaded yet.</p>}
       </section>
 
@@ -589,13 +598,17 @@ function Admin() {
             marking her strategies.
           </p>
         </div>
-        {(schemes ?? []).map((scheme) => (
+        <GroupedHistory
+          items={schemes ?? []}
+          getSubject={(sc) => sc.subject}
+          getYear={(sc) => sc.exam_year ?? null}
+          getKey={(sc) => sc.id}
+          renderItem={(scheme) => (
           <div
-            key={scheme.id}
             className="flex items-center justify-between gap-3 rounded-2xl border-2 border-border bg-cream p-4"
           >
             <div className="min-w-0">
-              <p className="truncate font-semibold">{scheme.original_name ?? "Marking scheme"}</p>
+              <p className="font-semibold [overflow-wrap:anywhere]">{scheme.original_name ?? "Marking scheme"}</p>
               <p className="text-sm text-muted-foreground">
                 {scheme.subject}
                 {scheme.paper_type ? ` · ${scheme.paper_type}` : ""}
@@ -612,7 +625,8 @@ function Admin() {
               Delete
             </Button>
           </div>
-        ))}
+          )}
+        />
         {!schemes?.length && <p className="text-muted-foreground">No marking schemes uploaded yet.</p>}
       </section>
 
@@ -1061,6 +1075,75 @@ function DatePick({
           <Calendar mode="single" selected={value} onSelect={onChange} />
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+/** Collapsible history: one folder per subject, and inside it one folder per exam year
+ * (newest first, "Year not set" last). Everything starts closed so a long upload history
+ * stays short; tap a folder to open it. */
+function GroupedHistory<T>({
+  items,
+  getSubject,
+  getYear,
+  getKey,
+  renderItem,
+}: {
+  items: T[];
+  getSubject: (item: T) => string;
+  getYear: (item: T) => number | null;
+  getKey: (item: T) => string;
+  renderItem: (item: T) => React.ReactNode;
+}) {
+  const bySubject = new Map<string, Map<number | null, T[]>>();
+  for (const item of items) {
+    const subject = getSubject(item) || "No subject";
+    const year = getYear(item);
+    const years = bySubject.get(subject) ?? new Map<number | null, T[]>();
+    years.set(year, [...(years.get(year) ?? []), item]);
+    bySubject.set(subject, years);
+  }
+  const subjects = Array.from(bySubject.entries()).sort(([a], [b]) => a.localeCompare(b));
+
+  return (
+    <div className="space-y-3">
+      {subjects.map(([subject, years]) => {
+        const total = Array.from(years.values()).reduce((n, list) => n + list.length, 0);
+        const yearEntries = Array.from(years.entries()).sort(([a], [b]) => {
+          if (a === null) return 1;
+          if (b === null) return -1;
+          return b - a;
+        });
+        return (
+          <Collapsible key={subject} className="rounded-2xl border-2 border-border bg-card">
+            <CollapsibleTrigger className="tap-lg group flex w-full items-center justify-between gap-3 p-4 text-left">
+              <span className="text-lg font-bold [overflow-wrap:anywhere]">{subject}</span>
+              <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+                {total}
+                <ChevronDown className="h-5 w-5 transition-transform group-data-[state=open]:rotate-180" />
+              </span>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-2 px-3 pb-3">
+              {yearEntries.map(([year, list]) => (
+                <Collapsible key={year ?? "none"} className="rounded-2xl border-2 border-border">
+                  <CollapsibleTrigger className="tap-lg group flex w-full items-center justify-between gap-3 p-3 text-left">
+                    <span className="font-semibold">{year ?? "Year not set"}</span>
+                    <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+                      {list.length}
+                      <ChevronDown className="h-5 w-5 transition-transform group-data-[state=open]:rotate-180" />
+                    </span>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-3 px-3 pb-3">
+                    {list.map((item) => (
+                      <div key={getKey(item)}>{renderItem(item)}</div>
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              ))}
+            </CollapsibleContent>
+          </Collapsible>
+        );
+      })}
     </div>
   );
 }
