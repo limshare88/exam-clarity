@@ -250,14 +250,23 @@ function Admin() {
 
     const filePath: string | null = null;
     if (file) {
-      // Duplicate check against the historical uploads log before any extraction runs.
+      // Duplicate check before any extraction runs. Two DIFFERENT papers can share one file
+      // name (Paper 1 and Paper 2 often do), so the name alone is not enough: it is a duplicate
+      // only when the name AND the Paper AND the Year all match. A Paper or Year left blank
+      // here counts as "any", so with both blank the file name alone decides.
+      const pickedPaper = normalizePaperLabel(paperType);
+      const pickedYear = Number(examYear) || null;
+      const sameAsPicked = (row: { paper_type: string | null; exam_year: number | null }) =>
+        (!pickedPaper || normalizePaperLabel(row.paper_type) === pickedPaper) &&
+        (!pickedYear || row.exam_year === pickedYear);
+
       const { data: seen } = await supabase
         .from("exam_questions")
-        .select("id")
+        .select("paper_type, exam_year")
         .eq("user_id", uid)
         .eq("metadata->>original_name", file.name)
-        .limit(1);
-      if (seen && seen.length) {
+        .limit(1000);
+      if ((seen ?? []).some(sameAsPicked)) {
         setBusy(false);
         setDuplicateKind("paper");
         setDuplicateName(file.name);
@@ -266,11 +275,12 @@ function Admin() {
       // Same check for marking schemes, so re-uploading one never silently replaces it.
       const { data: seenScheme } = await supabase
         .from("mark_schemes")
-        .select("id")
+        .select("paper_type, exam_year")
         .eq("user_id", uid)
+        .eq("subject", subject)
         .eq("original_name", file.name)
-        .limit(1);
-      if (seenScheme && seenScheme.length) {
+        .limit(1000);
+      if ((seenScheme ?? []).some(sameAsPicked)) {
         setBusy(false);
         setDuplicateKind("scheme");
         setDuplicateName(file.name);
@@ -661,7 +671,9 @@ function Admin() {
                 : "⚠️ This exam paper has already been uploaded to your question bank."}
             </DialogTitle>
             <DialogDescription>
-              {duplicateName} is already saved, so nothing new was added. Delete the existing{" "}
+              {duplicateName} is already saved, so nothing new was added. If this is a different
+              paper with the same file name, choose its Paper number (and Year) above, then upload
+              again. Otherwise, delete the existing{" "}
               {duplicateKind === "scheme" ? "marking scheme" : "paper"} first if you want to read it again.
             </DialogDescription>
           </DialogHeader>
