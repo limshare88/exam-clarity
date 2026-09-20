@@ -169,6 +169,7 @@ function Admin() {
     original_name: string;
     subject: string;
     exam_year: number | null;
+    paper_type: string | null;
     count: number;
     created_at: string;
   };
@@ -180,7 +181,7 @@ function Admin() {
       const data = await fetchAllRows((from, to) =>
         supabase
           .from("exam_questions")
-          .select("file_path, subject, exam_year, metadata, created_at")
+          .select("file_path, subject, exam_year, paper_type, metadata, created_at")
           .not("file_path", "is", null)
           .order("created_at", { ascending: false })
           .order("id")
@@ -195,6 +196,7 @@ function Admin() {
         if (existing) {
           existing.count += 1;
           if (existing.exam_year == null && typeof row.exam_year === "number") existing.exam_year = row.exam_year;
+          if (!existing.paper_type) existing.paper_type = normalizePaperLabel(row.paper_type);
           continue;
         }
         grouped.set(path, {
@@ -202,6 +204,7 @@ function Admin() {
           original_name: String(meta["original_name"] ?? path.split("/").pop() ?? "Uploaded paper"),
           subject: row.subject,
           exam_year: typeof row.exam_year === "number" ? row.exam_year : null,
+          paper_type: normalizePaperLabel(row.paper_type),
           count: 1,
           created_at: row.created_at,
         });
@@ -593,7 +596,7 @@ function Admin() {
             <div className="min-w-0">
               <p className="font-semibold [overflow-wrap:anywhere]">{paper.original_name}</p>
               <p className="text-sm text-muted-foreground">
-                {paper.subject} · {paper.count} question{paper.count === 1 ? "" : "s"} ·{" "}
+                {paper.subject} · {paper.paper_type ? `${paper.paper_type} · ` : ""}{paper.count} question{paper.count === 1 ? "" : "s"} ·{" "}
                 {format(new Date(paper.created_at), "d MMM yyyy")}
               </p>
             </div>
