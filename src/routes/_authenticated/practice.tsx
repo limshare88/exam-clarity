@@ -41,6 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Mic, Volume2, Square, MessageCircleQuestion, Send } from "lucide-react";
 import { toast } from "sonner";
 import { normalizePaperLabel } from "@/lib/paper";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 export const Route = createFileRoute("/_authenticated/practice")({
   head: () => ({
@@ -236,13 +237,16 @@ function Workspace() {
     queryKey: ["questions", subject],
     queryFn: async () => {
       seen.current.clear();
-      const { data } = await supabase
-        .from("exam_questions")
-        .select("id, subject, board, question_text, marks, image_url, diagrams, part_marks, paper_type, exam_year")
-        .eq("subject", subject)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      return data ?? [];
+      // No 200-question cap: older uploaded papers must stay available too.
+      return fetchAllRows((from, to) =>
+        supabase
+          .from("exam_questions")
+          .select("id, subject, board, question_text, marks, image_url, diagrams, part_marks, paper_type, exam_year")
+          .eq("subject", subject)
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(from, to),
+      );
     },
     enabled: Boolean(subject),
   });

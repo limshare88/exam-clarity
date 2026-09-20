@@ -33,6 +33,7 @@ import { cropAndUploadDiagram, renderPaperPages, type DiagramBox } from "@/lib/d
 import { ChevronDown, FileSearch, Trash2 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cleanPaperLabel, normalizePaperLabel } from "@/lib/paper";
+import { fetchAllRows } from "@/lib/fetch-all";
 
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -175,14 +176,18 @@ function Admin() {
   const { data: papers } = useQuery({
     queryKey: ["papers"],
     queryFn: async (): Promise<Paper[]> => {
-      const { data } = await supabase
-        .from("exam_questions")
-        .select("file_path, subject, exam_year, metadata, created_at")
-        .not("file_path", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(500);
+      // No row cap: every saved question is read (in pages) so no uploaded paper drops out.
+      const data = await fetchAllRows((from, to) =>
+        supabase
+          .from("exam_questions")
+          .select("file_path, subject, exam_year, metadata, created_at")
+          .not("file_path", "is", null)
+          .order("created_at", { ascending: false })
+          .order("id")
+          .range(from, to),
+      );
       const grouped = new Map<string, Paper>();
-      for (const row of data ?? []) {
+      for (const row of data) {
         const path = row.file_path as string;
         if (!path) continue;
         const meta = (row.metadata ?? {}) as Record<string, unknown>;

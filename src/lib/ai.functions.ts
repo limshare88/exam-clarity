@@ -462,13 +462,8 @@ Transcribe faithfully. Invent nothing. Keep formulas, units and command-word con
       data.examYear ?? (yearValue >= 1990 && yearValue <= 2100 ? yearValue : null);
 
     // Several schemes can share one subject / paper / year (Jan, June and Oct sittings), so a
-    // new file must ADD to the list. Only re-uploading the very same file name replaces it.
-    await context.supabase
-      .from("mark_schemes")
-      .delete()
-      .eq("user_id", context.userId)
-      .eq("subject", data.subject)
-      .eq("original_name", data.fileName);
+    // new file always ADDS to the list. Nothing is ever replaced here; the upload screen
+    // already stops a duplicate file name before it reaches this point.
     const { error: insertError } = await context.supabase.from("mark_schemes").insert({
       user_id: context.userId,
       subject: data.subject,
@@ -484,7 +479,7 @@ Transcribe faithfully. Invent nothing. Keep formulas, units and command-word con
     if (insertError) {
       if (insertError.code === "23505") {
         throw new Error(
-          "The database still limits marking schemes to one per paper and year. Run the marking-scheme database update, then upload again.",
+          "A marking scheme with this file name is already saved. If it is not in your list, the marking-scheme database update has not been run yet.",
         );
       }
       throw new Error(insertError.message);
