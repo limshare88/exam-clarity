@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { subjectStrategyRule } from "@/lib/subjects";
+import { normalizePaperLabel } from "@/lib/paper";
 import type { ExamSchematicData, SchematicKind } from "@/components/ExamSchematic";
 
 // All AI calls in this file now go directly to the app's own provider keys -- the shared
@@ -11,6 +12,13 @@ import type { ExamSchematicData, SchematicKind } from "@/components/ExamSchemati
 // (see callGemini below), the same model they already ran on through the gateway.
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 const OPENAI_MODEL = "gpt-5.4-mini";
+
+/** Exam sitting ("jan", "jun", "oct" ...) named in a file name such as "June 2024 MS.pdf".
+ * One subject can have several papers in the same year, so the sitting tells them apart. */
+function sittingOf(name: string | null | undefined): string | null {
+  const m = (name ?? "").match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|may|jun(?:e)?|jul(?:y)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i);
+  return m?.[1] ? m[1].slice(0, 3).toLowerCase() : null;
+}
 
 function isEnglishSubject(subject: string): boolean {
   return subject.toLowerCase().includes("english");
@@ -449,49 +457,37 @@ Transcribe faithfully. Invent nothing. Keep formulas, units and command-word con
     if (!schemeText && !entries.length) throw new Error("This marking scheme could not be read. Try a clearer file.");
 
     const yearValue = Math.round(Number(out["exam_year"] ?? 0));
-    const paperType = (data.paperType ?? "").trim() || String(out["paper_type"] ?? "").trim();
+    const paperType = normalizePaperLabel((data.paperType ?? "").trim() || String(out["paper_type"] ?? "").trim()) ?? "";
     const examYear =
       data.examYear ?? (yearValue >= 1990 && yearValue <= 2100 ? yearValue : null);
 
-    const { error: saveError } = await context.supabase
+    // Several schemes can share one subject / paper / year (Jan, June and Oct sittings), so a
+    // new file must ADD to the list. Only re-uploading the very same file name replaces it.
+    await context.supabase
       .from("mark_schemes")
-      .upsert(
-        {
-          user_id: context.userId,
-          subject: data.subject,
-          board: data.board || null,
-          paper_type: paperType || null,
-          exam_year: examYear,
-          file_path: data.filePath,
-          original_name: data.fileName,
-          scheme_text: schemeText.slice(0, 200000),
-          entries,
-          metadata: { extracted_by_ai: true, entry_count: entries.length },
-        },
-        { onConflict: "user_id,subject,paper_type,exam_year" },
-      );
-    // Unique index uses COALESCE, so fall back to a manual replace when upsert cannot match it.
-    if (saveError) {
-      await context.supabase
-        .from("mark_schemes")
-        .delete()
-        .eq("user_id", context.userId)
-        .eq("subject", data.subject)
-        .eq("paper_type", paperType || "")
-        .eq("exam_year", examYear ?? 0);
-      const { error: insertError } = await context.supabase.from("mark_schemes").insert({
-        user_id: context.userId,
-        subject: data.subject,
-        board: data.board || null,
-        paper_type: paperType || null,
-        exam_year: examYear,
-        file_path: data.filePath,
-        original_name: data.fileName,
-        scheme_text: schemeText.slice(0, 200000),
-        entries,
-        metadata: { extracted_by_ai: true, entry_count: entries.length },
-      });
-      if (insertError) throw new Error(insertError.message);
+      .delete()
+      .eq("user_id", context.userId)
+      .eq("subject", data.subject)
+      .eq("original_name", data.fileName);
+    const { error: insertError } = await context.supabase.from("mark_schemes").insert({
+      user_id: context.userId,
+      subject: data.subject,
+      board: data.board || null,
+      paper_type: paperType || null,
+      exam_year: examYear,
+      file_path: data.filePath,
+      original_name: data.fileName,
+      scheme_text: schemeText.slice(0, 200000),
+      entries,
+      metadata: { extracted_by_ai: true, entry_count: entries.length },
+    });
+    if (insertError) {
+      if (insertError.code === "23505") {
+        throw new Error(
+          "The database still limits marking schemes to one per paper and year. Run the marking-scheme database update, then upload again.",
+        );
+      }
+      throw new Error(insertError.message);
     }
 
     return {
@@ -602,6 +598,7 @@ export const coachStrategy = createServerFn({ method: "POST" })
     let paperType = data.paperType ?? null;
     let examYear = data.examYear ?? null;
     let questionNumber = (data.questionNumber ?? "").trim();
+    let sourceFileName = "";
     if (data.questionId) {
       const { data: row } = await context.supabase
         .from("exam_questions")
@@ -616,6 +613,7 @@ export const coachStrategy = createServerFn({ method: "POST" })
         examYear = row.exam_year ?? examYear;
         const meta = (row.metadata ?? {}) as Record<string, unknown>;
         questionNumber = String(meta["question_number"] ?? questionNumber).trim();
+        sourceFileName = String(meta["original_name"] ?? "");
       }
     }
 
@@ -632,9 +630,17 @@ export const coachStrategy = createServerFn({ method: "POST" })
         .limit(25);
 
       const list = schemes ?? [];
+      const wantPaper = normalizePaperLabel(paperType);
+      const paperOk = (s: (typeof list)[number]) => !wantPaper || normalizePaperLabel(s.paper_type) === wantPaper;
+      const yearOk = (s: (typeof list)[number]) => !examYear || s.exam_year === examYear;
+      // Several schemes can share a paper and year (Jan / June / Oct), so prefer the one from
+      // the same sitting as the question paper's file name.
+      const wantSitting = sittingOf(sourceFileName);
+      const sittingOk = (s: (typeof list)[number]) => !!wantSitting && sittingOf(s.original_name) === wantSitting;
       const scheme =
-        list.find((s) => (!paperType || s.paper_type === paperType) && (!examYear || s.exam_year === examYear)) ??
-        list.find((s) => (paperType && s.paper_type === paperType) || (examYear && s.exam_year === examYear)) ??
+        list.find((s) => paperOk(s) && yearOk(s) && sittingOk(s)) ??
+        list.find((s) => paperOk(s) && yearOk(s)) ??
+        list.find((s) => (wantPaper && normalizePaperLabel(s.paper_type) === wantPaper) || (examYear && s.exam_year === examYear)) ??
         list[0];
 
       if (scheme) {
@@ -648,7 +654,7 @@ export const coachStrategy = createServerFn({ method: "POST" })
           .slice(0, 24)
           .map((entry) => `${entry.question_number} (${entry.marks} marks): ${entry.answer_points.join(" | ")}`)
           .join("\n");
-        const exact = (!paperType || scheme.paper_type === paperType) && (!examYear || scheme.exam_year === examYear);
+        const exact = paperOk(scheme) && yearOk(scheme);
         schemeBrief = `\n\nOFFICIAL MARKING SCHEME${exact ? " for this exact paper" : " for this subject (closest match)"} (${scheme.original_name ?? "uploaded scheme"}${scheme.paper_type ? `, ${scheme.paper_type}` : ""}${scheme.exam_year ? `, ${scheme.exam_year}` : ""})${relevant.length ? ` — marking points for question ${questionNumber}` : ""}:\n${lines || String(scheme.scheme_text ?? "").slice(0, 4000)}`;
       }
     }
