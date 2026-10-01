@@ -83,6 +83,9 @@ type ActiveQuestion = {
   partMarks: QuestionPartMark[];
   paper_type: string | null;
   exam_year: number | null;
+  /** Where this question came from, so a wrong extraction or missing diagram can be
+   * traced back to the exact paper, question and page for re-cropping. */
+  source: { fileName: string | null; questionNumber: string | null; page: number | null } | null;
   schematic: ExamSchematicData | null;
 
 };
@@ -99,6 +102,36 @@ type Feedback = Awaited<ReturnType<typeof coachStrategy>>;
 /** Validates the `diagrams` jsonb column into typed entries. Falls back to the legacy
  * single `image_url` column (as one whole-question diagram) for rows saved before
  * per-part diagrams existed. */
+function readSource(raw: unknown): ActiveQuestion["source"] {
+  const meta = (raw ?? {}) as Record<string, unknown>;
+  const fileName = typeof meta["original_name"] === "string" ? meta["original_name"].trim() || null : null;
+  const questionNumber = String(meta["question_number"] ?? "").trim() || null;
+  const pageNum = Number(meta["page"]);
+  const page = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : null;
+  return fileName || questionNumber || page ? { fileName, questionNumber, page } : null;
+}
+
+/** Small "where is this from" line: paper, year, question and page, plus the uploaded
+ * file name so the parent can find the PDF and re-crop a missing diagram. */
+function SourceTag({ question }: { question: ActiveQuestion }) {
+  if (!question.id) {
+    return <p className="text-xs text-muted-foreground">Source: practice drill made for you</p>;
+  }
+  const paper = normalizePaperLabel(question.paper_type);
+  const bits = [
+    paper,
+    question.exam_year ? String(question.exam_year) : null,
+    question.source?.questionNumber ? `Q${question.source.questionNumber.replace(/^Q/i, "")}` : null,
+    question.source?.page ? `page ${question.source.page}` : null,
+  ].filter(Boolean);
+  return (
+    <div className="rounded-2xl border-2 border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+      <p className="font-semibold">📄 From: {bits.length ? bits.join(" · ") : "unknown paper"}</p>
+      {question.source?.fileName && <p className="mt-0.5 break-all">{question.source.fileName}</p>}
+    </div>
+  );
+}
+
 function normalizeDiagrams(raw: unknown, imageUrl: string | null): QuestionDiagram[] {
   const list = Array.isArray(raw)
     ? raw.flatMap((entry): QuestionDiagram[] => {
@@ -241,7 +274,7 @@ function Workspace() {
       return fetchAllRows((from, to) =>
         supabase
           .from("exam_questions")
-          .select("id, subject, board, question_text, marks, image_url, diagrams, part_marks, paper_type, exam_year")
+          .select("id, subject, board, question_text, marks, image_url, diagrams, part_marks, paper_type, exam_year, metadata")
           .eq("subject", subject)
           .order("created_at", { ascending: false })
           .order("id")
@@ -317,6 +350,7 @@ function Workspace() {
           partMarks: [],
           paper_type: null,
           exam_year: null,
+          source: null,
           schematic: res.schematic,
 
         });
@@ -355,6 +389,7 @@ function Workspace() {
         partMarks: normalizePartMarks(pick.part_marks),
         paper_type: pick.paper_type ?? null,
         exam_year: pick.exam_year ?? null,
+        source: readSource(pick.metadata),
         schematic: null,
 
       });
@@ -661,6 +696,7 @@ function Workspace() {
             <p className="text-sm font-semibold text-muted-foreground">
               {active.subject} · {active.board} · {active.marks} marks
             </p>
+            <SourceTag question={active} />
             {/* Diagrams tied to a specific sub-part render inline next to that part below;
                 only whole-question ("") diagrams show here at the top. */}
             {(diagramsByPath.get("") ?? []).map((diagram, index) => (
