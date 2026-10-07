@@ -11,13 +11,45 @@ const MATH_SPLIT = /(\$[^$\n]+\$)/g;
 
 export type TextSegment = { type: "math" | "text"; content: string };
 
+/** A plain-text numeric fraction like "3/4" or "15/16". Not part of a date ("12/05/2022"),
+ * a unit ("km/h") or a longer number, so neighbouring digits, letters, dots and slashes
+ * on either side rule it out. */
+const PLAIN_FRACTION = /(?<![\w./])(\d{1,3})\/(\d{1,3})(?![\w./])/g;
+
+/** The same numeric "a/b" inside a LaTeX segment, but not part of an exponent, subscript
+ * or command argument (e.g. "x^1/2" or "\frac{1}{2}/3" stay as written). */
+const LATEX_SLASH_FRACTION = /(?<![\w.^_{}\\/])(\d{1,3})\/(\d{1,3})(?![\w./{])/g;
+
+/** Shows fractions stacked (numerator over denominator) at full size: plain "3/4" becomes
+ * \dfrac{3}{4}, and \frac becomes \dfrac, since inline \frac is drawn small and cramped,
+ * which is hard to read. */
+function stackFractions(latex: string): string {
+  return latex
+    .replace(/\\frac(?![a-z])/g, "\\dfrac")
+    .replace(LATEX_SLASH_FRACTION, (_m, n: string, d: string) => `\\dfrac{${n}}{${d}}`);
+}
+
+function splitPlainFractions(text: string): TextSegment[] {
+  const out: TextSegment[] = [];
+  let last = 0;
+  PLAIN_FRACTION.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PLAIN_FRACTION.exec(text)) !== null) {
+    if (match.index > last) out.push({ type: "text", content: text.slice(last, match.index) });
+    out.push({ type: "math", content: `\\dfrac{${match[1]}}{${match[2]}}` });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) out.push({ type: "text", content: text.slice(last) });
+  return out;
+}
+
 export function splitMathSegments(text: string): TextSegment[] {
   return text
     .split(MATH_SPLIT)
     .filter((part) => part.length > 0)
-    .map((part) => {
+    .flatMap((part) => {
       const match = /^\$([^$\n]+)\$$/.exec(part);
-      return match?.[1] ? { type: "math" as const, content: match[1] } : { type: "text" as const, content: part };
+      return match?.[1] ? [{ type: "math" as const, content: stackFractions(match[1]) }] : splitPlainFractions(part);
     });
 }
 
