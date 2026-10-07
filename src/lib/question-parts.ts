@@ -92,6 +92,31 @@ function classify(token: string, openKinds: MarkerKind[]): MarkerKind | null {
   return null;
 }
 
+// A line that opens with maths notation rather than a sub-part label. Without this guard
+// "f(x) = x^2(2x + 1) - 15x" reads as part "(f)" with a nested roman part "(x)", and
+// "a = 3" reads as part "(a)".
+const MATH_OPERATOR_START = /^[=<>\u2264\u2265\u2260\u2248+\-\u2212\u00D7\u00F7*/^'\u2032\u00B2\u00B3]/;
+
+function isMathNotationHead(line: string, head: RegExpExecArray): boolean {
+  const rest = line.slice(head[0].length).trimStart();
+  // "a = 3", "f(x) = ...", "g(2) > 0", "f'(x)": an operator straight after the head.
+  if (MATH_OPERATOR_START.test(rest)) return true;
+
+  // Function notation: a bare letter run with no ")" "." "]" of its own, glued directly
+  // to a bracket, e.g. "f(x)", "g(2)", "fg(x)". Real labels print the letter bracketed
+  // ("(f)") or delimited ("f)", "f."). The bracketed argument must be a single variable or
+  // a number; "(i)" and "(v)" are left alone so OCR'd "a(i) Find ..." still splits.
+  const firstPart = head[1]!;
+  const bareLetters = /^[a-z]{1,4}$/i.test(firstPart);
+  const tail = head[2] ?? "";
+  if (bareLetters && tail.startsWith("(")) {
+    const arg = /^\(([^)]*)\)/.exec(tail)?.[1] ?? "";
+    if (/^\d{1,2}$/.test(arg)) return true;
+    if (/^[a-z]$/i.test(arg) && !/^[iv]$/i.test(arg)) return true;
+  }
+  return false;
+}
+
 function pretty(token: string, kind: MarkerKind): string {
   return kind === "number" ? `${token}.` : `(${token.toLowerCase()})`;
 }
@@ -116,7 +141,7 @@ function findMarkers(text: string): Marker[] {
     );
 
     let consumed = 0;
-    if (head) {
+    if (head && !isMathNotationHead(line, head)) {
       const tokens: { raw: string; at: number; len: number }[] = [];
       const first = /(\d{1,2}|[a-z]{1,4})/i.exec(head[1]!)!;
       tokens.push({
