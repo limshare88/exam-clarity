@@ -331,6 +331,42 @@ function Workspace() {
     startedAt.current = Date.now();
   }, []);
 
+  const toActive = useCallback(
+    (pick: NonNullable<typeof bank>[number]): ActiveQuestion => ({
+      id: pick.id,
+      subject: pick.subject,
+      board: pick.board ?? boardFor(pick.subject),
+      question_text: pick.question_text,
+      marks: pick.marks,
+      image_url: pick.image_url ?? null,
+      diagrams: normalizeDiagrams(pick.diagrams, pick.image_url ?? null),
+      partMarks: normalizePartMarks(pick.part_marks),
+      paper_type: pick.paper_type ?? null,
+      exam_year: pick.exam_year ?? null,
+      source: readSource(pick.metadata),
+      schematic: null,
+    }),
+    [boardFor],
+  );
+
+  /** Opens one specific question from the bank (a "similar question" link in feedback). */
+  const openQuestion = useCallback(
+    (id: string) => {
+      const pick = bank?.find((q) => q.id === id);
+      if (!pick) {
+        toast.error("That question could not be found. It may have been deleted.");
+        return;
+      }
+      resetQuestionState();
+      seen.current.add(pick.id);
+      setActive(toActive(pick));
+      if (mode === "challenge") setSecondsLeft((profile?.timer_seconds ?? 60) * Math.max(pick.marks, 1));
+      else setSecondsLeft(null);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    [bank, mode, profile, resetQuestionState, toActive],
+  );
+
   const loadNext = useCallback(async () => {
     if (!subject) return;
     resetQuestionState();
@@ -378,21 +414,7 @@ function Workspace() {
       }
       const pick = remaining[Math.floor(Math.random() * remaining.length)]!;
       seen.current.add(pick.id);
-      setActive({
-        id: pick.id,
-        subject: pick.subject,
-        board: pick.board ?? boardFor(subject),
-        question_text: pick.question_text,
-        marks: pick.marks,
-        image_url: pick.image_url ?? null,
-        diagrams: normalizeDiagrams(pick.diagrams, pick.image_url ?? null),
-        partMarks: normalizePartMarks(pick.part_marks),
-        paper_type: pick.paper_type ?? null,
-        exam_year: pick.exam_year ?? null,
-        source: readSource(pick.metadata),
-        schematic: null,
-
-      });
+      setActive(toActive(pick));
       nextMarks = pick.marks;
     }
     startedAt.current = Date.now();
@@ -400,7 +422,7 @@ function Workspace() {
       setSecondsLeft((profile?.timer_seconds ?? 60) * Math.max(nextMarks, 1));
     }
     else setSecondsLeft(null);
-  }, [subject, mode, filteredBank, bank, boardFor, profile, reinforce, resetQuestionState]);
+  }, [subject, mode, filteredBank, bank, boardFor, profile, reinforce, resetQuestionState, toActive]);
 
 
 
@@ -879,7 +901,12 @@ function Workspace() {
                     </div>
                     <FeedbackBlock title="🧠 Logic" body={part.logic_feedback} />
                     <FeedbackBlock title="🔢 Sequencing" body={part.sequencing_feedback} />
-                    <FeedbackBlock title="📐 Formulas & rules" body={part.formula_feedback} />
+                    {part.formula_explain ? (
+                      <FormulaExplainBlock explain={part.formula_explain} />
+                    ) : (
+                      <FeedbackBlock title="📐 Formulas & rules" body={part.formula_feedback} />
+                    )}
+                    <SimilarQuestions items={part.similar_questions} onOpen={openQuestion} />
                     {isNotSure(partStrategies[part.label] ?? "") && part.model_steps?.length > 0 && (
                       <div className="rounded-2xl border-2 border-border bg-card p-4">
                         <p className="font-bold">✅ The correct step order</p>
@@ -923,7 +950,12 @@ function Workspace() {
                 <>
                   <FeedbackBlock title="🧠 Logic" body={feedback.logic_feedback} />
                   <FeedbackBlock title="🔢 Sequencing" body={feedback.sequencing_feedback} />
-                  <FeedbackBlock title="📐 Formulas & rules" body={feedback.formula_feedback} />
+                  {feedback.formula_explain ? (
+                    <FormulaExplainBlock explain={feedback.formula_explain} />
+                  ) : (
+                    <FeedbackBlock title="📐 Formulas & rules" body={feedback.formula_feedback} />
+                  )}
+                  <SimilarQuestions items={feedback.similar_questions} onOpen={openQuestion} />
                   {isNotSure(strategy) && feedback.model_steps?.length > 0 && (
                     <div className="rounded-2xl border-2 border-border bg-cream p-4">
                       <p className="font-bold">✅ The correct step order</p>
@@ -1218,6 +1250,86 @@ function FeedbackBlock({ title, body }: { title: string; body: string }) {
     <div className="rounded-2xl border-2 border-border bg-lavender p-4">
       <p className="font-bold">{title}</p>
       <p className="reading-text mt-1 text-base">{body}</p>
+    </div>
+  );
+}
+
+type FormulaExplainData = NonNullable<Feedback["formula_explain"]>;
+
+const VERDICT_TITLE: Record<FormulaExplainData["verdict"], string> = {
+  right: "✅ Your formula is the right one",
+  partly: "🟡 Your formula is close",
+  wrong: "🔁 A different formula is needed here",
+  none: "📐 The formula to use",
+};
+
+/** Explains the formula choice both ways: why hers does not fit here and where it WOULD
+ * be used, then what in the question points to the correct one. */
+function FormulaExplainBlock({ explain }: { explain: FormulaExplainData }) {
+  const showHers = explain.her_choice && explain.verdict !== "none";
+  return (
+    <div className="space-y-3 rounded-2xl border-2 border-border bg-lavender p-4">
+      <p className="font-bold">{VERDICT_TITLE[explain.verdict]}</p>
+      {showHers && explain.verdict !== "right" && (
+        <div className="rounded-2xl border-2 border-border bg-card p-3">
+          <p className="text-sm font-semibold text-muted-foreground">You used</p>
+          <MathText text={explain.her_choice} className="reading-text text-base font-semibold" />
+          {explain.why_not_here && (
+            <>
+              <p className="mt-2 text-sm font-semibold text-muted-foreground">Why it does not work here</p>
+              <MathText text={explain.why_not_here} className="reading-text text-base" />
+            </>
+          )}
+          {explain.where_it_works && (
+            <>
+              <p className="mt-2 text-sm font-semibold text-muted-foreground">When it IS the right tool</p>
+              <MathText text={explain.where_it_works} className="reading-text text-base" />
+            </>
+          )}
+        </div>
+      )}
+      <div className="rounded-2xl border-2 border-border bg-card p-3">
+        <p className="text-sm font-semibold text-muted-foreground">
+          {explain.verdict === "right" ? "You chose" : "Use this"}
+        </p>
+        <MathText text={explain.correct_choice || explain.her_choice} className="reading-text text-base font-semibold" />
+        {explain.why_it_fits && (
+          <>
+            <p className="mt-2 text-sm font-semibold text-muted-foreground">How to spot it</p>
+            <MathText text={explain.why_it_fits} className="reading-text text-base" />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Other uploaded questions that use the same formula, to practise it straight away. */
+function SimilarQuestions({
+  items,
+  onOpen,
+}: {
+  items: Feedback["similar_questions"] | undefined;
+  onOpen: (id: string) => void;
+}) {
+  if (!items?.length) return null;
+  return (
+    <div className="rounded-2xl border-2 border-border bg-mint p-4">
+      <p className="font-bold">🔗 Practise the same formula</p>
+      <ul className="mt-2 space-y-2">
+        {items.map((item) => (
+          <li key={item.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(item.id)}
+              className="tap-lg w-full rounded-2xl border-2 border-border bg-card px-3 py-2 text-left"
+            >
+              <span className="block font-semibold">{item.label}</span>
+              <span className="block text-sm text-muted-foreground">Uses: {item.shared.join(", ")}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

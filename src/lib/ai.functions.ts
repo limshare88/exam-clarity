@@ -1,4 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { subjectStrategyRule } from "@/lib/subjects";
 import { normalizePaperLabel } from "@/lib/paper";
@@ -556,6 +558,21 @@ export const lookupWord = createServerFn({ method: "POST" })
  * where it does). */
 export type ModelStep = { step: number; action: string; reason: string };
 
+/** Why a formula / rule / technique is or isn't the right tool for this part. Explains
+ * both sides: why her choice doesn't fit here (and where it WOULD be the right tool), and
+ * what in the question points to the correct one. */
+export type FormulaExplain = {
+  her_choice: string;
+  verdict: "right" | "wrong" | "partly" | "none";
+  why_not_here: string;
+  where_it_works: string;
+  correct_choice: string;
+  why_it_fits: string;
+};
+
+/** Another uploaded question that needs the same formula, for practising it straight away. */
+export type SimilarQuestion = { id: string; label: string; shared: string[] };
+
 export type CoachPartFeedback = {
   label: string;
   score: number;
@@ -564,7 +581,166 @@ export type CoachPartFeedback = {
   formula_feedback: string;
   missing_steps: string[];
   model_steps: ModelStep[];
+  formula_explain: FormulaExplain | null;
+  similar_questions: SimilarQuestion[];
 };
+
+/** Canonical form of a formula tag so "Cosine Rule." and "cosine rule" match. */
+function normalizeTag(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s'+\-/()^]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48);
+}
+
+function readTagList(value: unknown, max = 4): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map(normalizeTag).filter((t) => t.length >= 3))).slice(0, max);
+}
+
+/** Formula tags saved on a question row (metadata.formula_tags), or null when the question
+ * has not been tagged yet. An empty array means "tagged, but uses no named formula". */
+function storedTags(metadata: unknown): string[] | null {
+  const meta = (metadata ?? {}) as Record<string, unknown>;
+  return Array.isArray(meta["formula_tags"]) ? readTagList(meta["formula_tags"], 6) : null;
+}
+
+type BankRow = {
+  id: string;
+  question_text: string;
+  paper_type: string | null;
+  exam_year: number | null;
+  metadata: unknown;
+};
+
+async function readSubjectBank(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  subject: string,
+): Promise<BankRow[]> {
+  const rows: BankRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase
+      .from("exam_questions")
+      .select("id, question_text, paper_type, exam_year, metadata")
+      .eq("user_id", userId)
+      .eq("subject", subject)
+      .order("created_at", { ascending: true })
+      .order("id")
+      .range(from, from + 999);
+    const page: BankRow[] = data ?? [];
+    rows.push(...page);
+    if (page.length < 1000) break;
+  }
+  return rows;
+}
+
+/** Most-used tags first, so the AI reuses the same names instead of inventing synonyms. */
+function tagVocabulary(rows: BankRow[], max = 150): string[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) for (const tag of storedTags(row.metadata) ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([tag]) => tag);
+}
+
+function questionLabel(row: BankRow): string {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  const sitting = String(meta["original_name"] ?? "").match(
+    /\b(jan(?:uary)?|may|june?|oct(?:ober)?|nov(?:ember)?)\b/i,
+  )?.[1];
+  const month = sitting
+    ? ({ jan: "January", may: "May", jun: "June", oct: "October", nov: "November" } as Record<string, string>)[
+        sitting.slice(0, 3).toLowerCase()
+      ]
+    : null;
+  const number = String(meta["question_number"] ?? "").trim().replace(/^q/i, "");
+  return [
+    [month, row.exam_year].filter(Boolean).join(" ") || null,
+    normalizePaperLabel(row.paper_type),
+    number ? `Q${number}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Uploaded question";
+}
+
+/** Up to `max` other uploaded questions sharing a formula tag, best overlap first, spread
+ * across different papers where possible. */
+function findSimilar(rows: BankRow[], tags: string[], excludeId: string | null, max = 3): SimilarQuestion[] {
+  if (!tags.length) return [];
+  const wanted = new Set(tags);
+  const scored = rows
+    .filter((row) => row.id !== excludeId)
+    .map((row) => {
+      const shared = (storedTags(row.metadata) ?? []).filter((t) => wanted.has(t));
+      return { row, shared };
+    })
+    .filter((x) => x.shared.length > 0)
+    .sort((a, b) => b.shared.length - a.shared.length || Math.random() - 0.5);
+  const picked: typeof scored = [];
+  const papersUsed = new Set<string>();
+  for (const x of scored) {
+    const paperKey = `${x.row.exam_year}-${x.row.paper_type}-${String((x.row.metadata as Record<string, unknown>)?.["original_name"] ?? "")}`;
+    if (papersUsed.has(paperKey)) continue;
+    papersUsed.add(paperKey);
+    picked.push(x);
+    if (picked.length >= max) break;
+  }
+  for (const x of scored) {
+    if (picked.length >= max) break;
+    if (!picked.includes(x)) picked.push(x);
+  }
+  return picked.map((x) => ({ id: x.row.id, label: questionLabel(x.row), shared: x.shared }));
+}
+
+/** Labels untagged questions of one subject with the formulas / rules / techniques they
+ * need, in small batches, so the coach can point to similar questions. Call repeatedly
+ * until `remaining` is 0. Text-only and cheap: one short call per batch of questions. */
+export const tagQuestionFormulas = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { subject: string }) => input)
+  .handler(async ({ data, context }) => {
+    const rows = await readSubjectBank(context.supabase, context.userId, data.subject);
+    const untagged = rows.filter((row) => storedTags(row.metadata) === null);
+    if (!untagged.length) return { tagged: 0, remaining: 0 };
+
+    const batch = untagged.slice(0, 15);
+    const vocab = tagVocabulary(rows);
+    const out = await callGemini(
+      `You label ${data.subject} exam questions with the named formulas, rules, theorems or techniques a student must use to answer them.
+Return JSON: {"items": [{"id": "<copy the given id>", "formulas": ["..."]}]} with one item per question given.
+Rules for "formulas":
+- 1 to 4 short lowercase names, each the standard textbook name, e.g. "cosine rule", "chain rule", "quadratic formula", "integration by parts", "suvat equations", "conservation of momentum", "ideal gas equation", "binomial expansion".
+- Name the specific tool, never a whole topic ("product rule", not "differentiation"), and never a step ("substitute values").
+- ALWAYS reuse a name from this existing list when it means the same thing, spelled exactly as listed: ${vocab.length ? vocab.join("; ") : "(list is empty)"}.
+- When a question needs no named formula or rule, return an empty array.`,
+      batch
+        .map((row) => `id: ${row.id}\nquestion: ${row.question_text.slice(0, 1500)}`)
+        .join("\n\n---\n\n"),
+    );
+
+    const items = Array.isArray(out["items"]) ? out["items"] : [];
+    const byId = new Map<string, string[]>();
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const raw = item as Record<string, unknown>;
+      byId.set(String(raw["id"] ?? ""), readTagList(raw["formulas"]));
+    }
+
+    let tagged = 0;
+    for (const row of batch) {
+      // A question the AI skipped is still marked (empty) so the loop always finishes.
+      const tags = byId.get(row.id) ?? [];
+      const metadata = { ...((row.metadata ?? {}) as Record<string, unknown>), formula_tags: tags };
+      const { error } = await context.supabase
+        .from("exam_questions")
+        .update({ metadata })
+        .eq("id", row.id)
+        .eq("user_id", context.userId);
+      if (!error) tagged += 1;
+    }
+    return { tagged, remaining: Math.max(0, untagged.length - batch.length) };
+  });
 
 export const coachStrategy = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -655,6 +831,12 @@ export const coachStrategy = createServerFn({ method: "POST" })
     }
 
 
+    // STEP 3 — the subject's question bank, for the formula-name vocabulary and for finding
+    // similar questions after the coach replies.
+    const bank = await readSubjectBank(context.supabase, context.userId, subject);
+    const vocab = tagVocabulary(bank);
+    const ownTags = (data.questionId ? storedTags(bank.find((r) => r.id === data.questionId)?.metadata) : null) ?? [];
+
     const partsBrief = multi
       ? parts
           .map(
@@ -675,6 +857,16 @@ You completely ignore missing numerical working, missing final answers, missing 
 MODEL STEPS — for every sub-question, work out the ideal, correctly-sequenced strategy for reaching full marks, independent of what she wrote. Number it Step 1, Step 2, Step 3 in the order they should be carried out. For EACH step give: the action itself in one short plain sentence, and a separate one-sentence reason explaining why that action has to happen at that point in the sequence (what it depends on, what it feeds into, or which mark it secures) — never just restate the action as its own reason. Keep the whole sequence to the minimum steps a strong answer actually needs (usually 2-5) — do not pad it out.
 
 SEQUENCING FEEDBACK — compare her actual steps against the model steps above, in order. For every point where her sequence diverges (a step in the wrong position, a step missing entirely, or an extra/wrong step that doesn't belong), say so explicitly: name what she wrote there (or that nothing was there), say plainly why that placement is wrong, then say what the correct step at that point is and why it has to come there instead (tie this back to the same reason given in model_steps, in her own simplified terms). If her sequence already matches the model, say so plainly and specifically rather than something generic. This must read as a direct comparison, not a vague summary.
+
+FORMULA EXPLANATION — for every sub-question, explain the formula, rule or technique choice so she understands WHY, not just WHAT. Fill formula_explain with:
+- her_choice: the formula, rule or technique she named or clearly used, in a few words; "" when she named none.
+- verdict: "right" (her choice is the one needed), "wrong" (it does not work here), "partly" (correct but incomplete, or right idea with a missing piece), or "none" (she named nothing, or said "not sure").
+- why_not_here: when verdict is "wrong" or "partly", 1-2 plain sentences saying exactly why her choice does not work for THIS question, pointing to the specific fact in the question that rules it out (e.g. "The sine rule needs an angle and its opposite side. Here you know two sides and the angle between them, so no pair matches."). "" when verdict is "right" or "none".
+- where_it_works: when verdict is "wrong" or "partly", 1 sentence saying when her choice IS the right tool, with a tiny example of that kind of question, so she learns it is not a bad formula, just the wrong one here. "" otherwise.
+- correct_choice: the formula, rule or technique this part needs. Write any formula as inline LaTeX in single dollar signs, e.g. "cosine rule: $a^2 = b^2 + c^2 - 2bc\\cos A$".
+- why_it_fits: 1-2 plain sentences naming the clue in the question that tells you to use it (what is given and what is asked) and why it works. When verdict is "right", confirm why her choice works so she can spot it again.
+Base this on the marking scheme when one is supplied. Never invent a formula the question does not need.
+formula_tags: 1-3 short lowercase standard names of the formulas or rules THIS part needs (e.g. "cosine rule", "chain rule"). Reuse a name from this list whenever it means the same thing, spelled exactly as listed: ${vocab.length ? vocab.join("; ") : "(list is empty — use the standard textbook name)"}.
 ${
   schemeBrief
     ? `MANDATORY MARK SCHEME CALIBRATION. The official uploaded marking scheme for this paper is supplied at the end of the user message. It overrides your own expectations.
@@ -691,9 +883,9 @@ Never contradict the scheme and never invent marking points it does not contain.
 ${
   multi
     ? `This question has ${parts.length} separate sub-questions and she wrote a separate blueprint for each. Grade EVERY sub-question independently on its own merits: never let one part's quality change another part's judgement, and never merge them. When a part's strategy is just her saying she does not know (e.g. "not sure"), do not critique it as a wrong attempt — there is nothing to critique. Score it 0, and make logic_feedback and sequencing_feedback warm and instructional (introduce the approach for the first time) rather than corrective; formula_feedback should simply name what's needed. model_steps must still be filled in for it exactly as for any other part.
-Reply as JSON with keys: part_feedback (array, one object per sub-question in the same order, each with label (copy the given label exactly), score (0-100 integer), logic_feedback (2 short sentences), sequencing_feedback (a direct step-by-step comparison as described above — as many sentences as needed, do not compress it to 2), formula_feedback (2 short sentences naming the formulas/rules expected for THAT part), missing_steps (array of short strings), model_steps (array of {step, action, reason} as described above, for THAT part)), score (0-100 integer overall, the average across the parts), board_used, rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), struggle_tags (array of 1-4 short lowercase tags), encouragement (one warm short sentence about the whole question).`
+Reply as JSON with keys: part_feedback (array, one object per sub-question in the same order, each with label (copy the given label exactly), score (0-100 integer), logic_feedback (2 short sentences), sequencing_feedback (a direct step-by-step comparison as described above — as many sentences as needed, do not compress it to 2), formula_feedback (2 short sentences naming the formulas/rules expected for THAT part), missing_steps (array of short strings), model_steps (array of {step, action, reason} as described above, for THAT part), formula_explain (object as described above, for THAT part), formula_tags (array of strings, for THAT part)), score (0-100 integer overall, the average across the parts), board_used, rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), struggle_tags (array of 1-4 short lowercase tags), encouragement (one warm short sentence about the whole question).`
     : `When her strategy is just her saying she does not know (e.g. "not sure"), do not critique it as a wrong attempt — there is nothing to critique. Score it 0, and make logic_feedback and sequencing_feedback warm and instructional (introduce the approach for the first time) rather than corrective; formula_feedback should simply name what's needed. model_steps must still be filled in exactly as for any other attempt.
-Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (a direct step-by-step comparison as described above — as many sentences as needed, do not compress it to 2), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), model_steps (array of {step, action, reason} as described above), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`
+Reply as JSON with keys: score (0-100 integer for strategy quality), board_used (the exact named board), rubric_basis (one concise sentence naming the board-specific command word or marking principle applied), logic_feedback (2 short sentences), sequencing_feedback (a direct step-by-step comparison as described above — as many sentences as needed, do not compress it to 2), formula_feedback (2 short sentences naming the formulas/rules expected), missing_steps (array of short strings), model_steps (array of {step, action, reason} as described above), formula_explain (object as described above), formula_tags (array of strings), struggle_tags (array of 1-4 short lowercase tags describing what she found hard), encouragement (one warm short sentence).`
 }`,
       (multi
         ? `Whole question (${data.marks} marks total):\n${data.questionText}\n\n${partsBrief}`
@@ -717,6 +909,30 @@ Reply as JSON with keys: score (0-100 integer for strategy quality), board_used 
         .filter((s): s is ModelStep => s !== null);
     };
 
+    const readExplain = (value: unknown): FormulaExplain | null => {
+      if (!value || typeof value !== "object") return null;
+      const item = value as Record<string, unknown>;
+      const text = (key: string) => String(item[key] ?? "").trim();
+      const rawVerdict = text("verdict").toLowerCase();
+      const verdict: FormulaExplain["verdict"] =
+        rawVerdict === "right" || rawVerdict === "wrong" || rawVerdict === "partly" ? rawVerdict : "none";
+      const explain: FormulaExplain = {
+        her_choice: text("her_choice"),
+        verdict,
+        why_not_here: verdict === "wrong" || verdict === "partly" ? text("why_not_here") : "",
+        where_it_works: verdict === "wrong" || verdict === "partly" ? text("where_it_works") : "",
+        correct_choice: text("correct_choice"),
+        why_it_fits: text("why_it_fits"),
+      };
+      return explain.correct_choice || explain.why_it_fits ? explain : null;
+    };
+
+    // The AI's tags for this part, falling back to the question's own saved tags.
+    const similarFor = (value: unknown): SimilarQuestion[] => {
+      const tags = readTagList(value, 3);
+      return findSimilar(bank, tags.length ? tags : ownTags, data.questionId ?? null);
+    };
+
     const rawParts = Array.isArray(out["part_feedback"]) ? out["part_feedback"] : [];
     const part_feedback: CoachPartFeedback[] = rawParts.flatMap((value, index): CoachPartFeedback[] => {
       if (!value || typeof value !== "object") return [];
@@ -730,9 +946,37 @@ Reply as JSON with keys: score (0-100 integer for strategy quality), board_used 
           formula_feedback: String(item["formula_feedback"] ?? ""),
           missing_steps: (item["missing_steps"] ?? []) as string[],
           model_steps: readModelSteps(item["model_steps"]),
+          formula_explain: readExplain(item["formula_explain"]),
+          similar_questions: similarFor(item["formula_tags"]),
         },
       ];
     });
+
+    // An untagged question learns its tags from this check, so it can show up as a
+    // "similar question" for others without waiting for the parent-panel tagging pass.
+    if (data.questionId) {
+      const row = bank.find((r) => r.id === data.questionId);
+      if (row && storedTags(row.metadata) === null) {
+        const learned = readTagList(
+          [
+            ...rawParts.flatMap((p) =>
+              p && typeof p === "object" && Array.isArray((p as Record<string, unknown>)["formula_tags"])
+                ? ((p as Record<string, unknown>)["formula_tags"] as unknown[])
+                : [],
+            ),
+            ...(Array.isArray(out["formula_tags"]) ? out["formula_tags"] : []),
+          ],
+          6,
+        );
+        if (learned.length) {
+          await context.supabase
+            .from("exam_questions")
+            .update({ metadata: { ...((row.metadata ?? {}) as Record<string, unknown>), formula_tags: learned } })
+            .eq("id", row.id)
+            .eq("user_id", context.userId);
+        }
+      }
+    }
 
     const overall = Number(out["score"] ?? 0);
     const averaged =
@@ -749,6 +993,8 @@ Reply as JSON with keys: score (0-100 integer for strategy quality), board_used 
       formula_feedback: String(out["formula_feedback"] ?? ""),
       missing_steps: (out["missing_steps"] ?? []) as string[],
       model_steps: readModelSteps(out["model_steps"]),
+      formula_explain: readExplain(out["formula_explain"]),
+      similar_questions: part_feedback.length ? [] : similarFor(out["formula_tags"]),
       struggle_tags: (out["struggle_tags"] ?? []) as string[],
       encouragement: String(out["encouragement"] ?? ""),
       part_feedback,

@@ -28,7 +28,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { extractExamQuestions, extractMarkScheme, MARK_SCHEME_NAME_PATTERN } from "@/lib/ai.functions";
+import { extractExamQuestions, extractMarkScheme, MARK_SCHEME_NAME_PATTERN, tagQuestionFormulas } from "@/lib/ai.functions";
 import { cropAndUploadDiagram, renderPaperPages, type DiagramBox } from "@/lib/diagram-crop";
 import { ChevronDown, FileSearch, Trash2 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -75,6 +75,36 @@ function Admin() {
   const [duplicateKind, setDuplicateKind] = useState<"paper" | "scheme">("paper");
   const extractQuestions = useServerFn(extractExamQuestions);
   const readMarkScheme = useServerFn(extractMarkScheme);
+  const tagFormulas = useServerFn(tagQuestionFormulas);
+  const [tagging, setTagging] = useState<string | null>(null);
+
+  /** Labels every untagged question with the formulas it uses, so the coach can suggest
+   * similar questions. Runs in small batches until each subject is done. */
+  async function linkSimilarQuestions(subjectList: string[], quiet = false) {
+    if (tagging) return;
+    let total = 0;
+    try {
+      for (const name of subjectList) {
+        setTagging(name);
+        for (let round = 0; round < 200; round += 1) {
+          const res = await tagFormulas({ data: { subject: name } });
+          total += res.tagged;
+          if (res.remaining === 0 || res.tagged === 0) break;
+        }
+      }
+      if (!quiet) {
+        toast.success(
+          total
+            ? `${total} question${total === 1 ? "" : "s"} linked by formula. The coach can now suggest similar questions.`
+            : "Every question is already linked by formula.",
+        );
+      }
+    } catch (error) {
+      if (!quiet) toast.error(error instanceof Error ? error.message : "Linking questions did not finish. Try again.");
+    } finally {
+      setTagging(null);
+    }
+  }
 
 
 
@@ -401,6 +431,8 @@ function Admin() {
         setFile(null);
         qc.invalidateQueries({ queryKey: ["questions"] });
         qc.invalidateQueries({ queryKey: ["papers"] });
+        // Link the new questions by formula in the background (does not hold up the upload).
+        void linkSimilarQuestions([subject], true);
         const withDiagrams = rows.filter((r) => r.diagrams.length > 0).length;
         toast.success(
           `${rows.length} question${rows.length === 1 ? "" : "s"} saved automatically` +
@@ -584,6 +616,17 @@ function Admin() {
             Questions are saved automatically when a paper is read.
           </p>
         </div>
+        <Button
+          variant="secondary"
+          onClick={() => linkSimilarQuestions(subjects.map((s) => s.subject))}
+          disabled={Boolean(tagging) || !subjects.length}
+          className="tap-lg w-full rounded-2xl border-2 border-border text-sm"
+        >
+          {tagging ? `🔗 Linking ${tagging} questions…` : "🔗 Link similar questions by formula"}
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          Run once for papers uploaded before this feature. New uploads are linked automatically.
+        </p>
         <GroupedHistory
           items={papers ?? []}
           getSubject={(p) => p.subject}
