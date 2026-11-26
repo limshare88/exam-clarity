@@ -1,0 +1,107 @@
+# Daily backup of the Exam Clarity database, kept privately in this GitHub repo for 30 days.
+# Replaces the Supabase Pro plan's daily backups while the project is on the free plan.
+# Setup and restore steps: README.md, section "Daily database backup".
+#
+# Uploaded exam-paper PDFs/images themselves are not included -- they can always be re-uploaded
+# from the original files, and keeping them out keeps the backup small.
+
+name: Daily database backup
+
+on:
+  schedule:
+    - cron: "17 19 * * *"   # 3:17 am Malaysia time, every day
+  workflow_dispatch:         # "Run workflow" button, to back up now
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_URL: ${{ secrets.EXAM_CLARITY_DB_URL }}
+    steps:
+      - name: Check the database link is set
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::error::Add the EXAM_CLARITY_DB_URL secret first (see SETUP.md, 'Daily database backup')."
+            exit 1
+          fi
+
+      - name: Tidy the database link
+        # Makes the link work even if the password has symbols (@ # / ? : %), or the secret has
+        # stray spaces, quotes or the [ ] around the password. Never prints the link itself.
+        run: |
+          python3 - <<'PY'
+          import os, re, urllib.parse
+          raw = os.environ["DB_URL"]
+          # Find the address even if it was pasted as part of something else,
+          # e.g. psql "postgresql://…" or DATABASE_URL="postgresql://…". Read to the end of its line.
+          start = re.search(r"postgres(?:ql)?://", raw)
+          if start:
+              u = raw[start.start():].splitlines()[0].strip().rstrip("\"'`").strip()
+          else:
+              u = raw.strip()
+          m = re.match(r"^(postgres(?:ql)?://)([^:/@]+):(.*)@([^@/\s]+)(/\S*)?$", u, re.S)
+          if not m:
+              # Safe clues about what was pasted, without showing it.
+              clues = [
+                  "%d line(s), %d characters" % (len(raw.strip().splitlines()) or 0, len(raw.strip())),
+                  "contains 'postgres://' or 'postgresql://': %s" % bool(start),
+                  "contains '@': %s" % ("@" in raw),
+                  "contains 'pooler.supabase.com': %s" % ("pooler.supabase.com" in raw),
+                  "has spaces: %s" % bool(re.search(r"\s", raw.strip())),
+                  "has unusual (non-keyboard) characters: %s" % bool(re.search(r"[^\x21-\x7e\s]", raw)),
+              ]
+              print("::error::The EXAM_CLARITY_DB_URL secret isn't a database address. It should be the Session pooler "
+                    "link from Supabase (Connect, then Direct, then Session pooler), with your password in place "
+                    "of [YOUR-DATABASE-PASSWORD]. What was found: " + "; ".join(clues))
+              raise SystemExit(1)
+          scheme, user, pw, host, path = m.groups()
+          pw = pw.strip()
+          if pw.startswith("[") and pw.endswith("]"):
+              pw = pw[1:-1]
+          if re.fullmatch(r"YOUR[-_ ].*PASSWORD", pw.upper()):
+              print("::error::EXAM_CLARITY_DB_URL still has Supabase's placeholder (e.g. [YOUR-DATABASE-PASSWORD]) in it. "
+                    "Put your real database password there, without the [ ].")
+              raise SystemExit(1)
+          if re.search(r"\s|[^\x21-\x7e]", pw):
+              print("::warning::The password part has a space or an unusual character (a phone keyboard can add "
+                    "these, e.g. curly quotes). If the database refuses the login, check the password in the secret.")
+          for q in ("'", '"', "`"):
+              if pw.startswith(q) and pw.endswith(q) and len(pw) > 1:
+                  pw = pw[1:-1]
+          pw = urllib.parse.quote(urllib.parse.unquote(pw), safe="")
+          url = f"postgresql://{user}:{pw}@{host}{path or '/postgres'}"
+          if "pooler.supabase.com" not in host:
+              print("::warning::The link isn't a Supabase pooler address. GitHub can usually only reach "
+                    "the Session pooler one (…pooler.supabase.com:5432).")
+          print(f"::add-mask::{url}")
+          print(f"::add-mask::{pw}")
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"DB_URL={url}\n")
+          print("Database link OK (host: %s)" % host)
+          PY
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Back up roles, structure and data
+        run: |
+          mkdir backup
+          supabase db dump --db-url "$DB_URL" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$DB_URL" -f backup/schema.sql
+          supabase db dump --db-url "$DB_URL" -f backup/data.sql --use-copy --data-only
+          ls -l backup
+          # An empty data file means something went wrong, so fail loudly instead of saving it.
+          test -s backup/schema.sql && test -s backup/data.sql
+          echo "DAY=$(TZ=Asia/Kuala_Lumpur date +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exam-clarity-backup-${{ env.DAY }}-${{ github.run_number }}
+          path: backup/
+          retention-days: 30
+          compression-level: 9
