@@ -33,9 +33,9 @@ npm run dev
 
 Requires a `.env` with the Supabase project's URL and keys — see `.env` for the variable names.
 
-## Daily database backup
+## Weekly database backup
 
-`.github/workflows/backup.yml` backs up the database every day at 3:17 am (Malaysia time) and keeps each
+`.github/workflows/backup.yml` backs up the database every Sunday at 3:17 am (Malaysia time) and keeps each
 backup privately in this GitHub repo for 30 days. Only people with access to the repo can download them.
 Uploaded exam-paper PDFs/images themselves aren't included — they can always be re-uploaded from the
 original files, and leaving them out keeps the backup small.
@@ -49,14 +49,14 @@ original files, and leaving them out keeps the backup small.
    Project Settings → Database → **Reset database password**. This doesn't affect the app's own keys.
 4. On GitHub, open this repo → Settings → Secrets and variables → Actions → **New repository secret**.
    Name: `EXAM_CLARITY_DB_URL`. Value: the full URI from step 3.
-5. Actions tab → **Daily database backup** → **Run workflow**. After 1 to 2 minutes it should show a green tick,
+5. Actions tab → **Weekly database backup** → **Run workflow**. After 1 to 2 minutes it should show a green tick,
    with a backup file (for example `exam-clarity-backup-2026-11-26-1`) at the bottom of the run page.
 
 If a backup fails, GitHub emails you. Check the Actions tab.
 
 **Downloading or restoring a backup**
 
-Actions tab → Daily database backup → open a run → download the backup at the bottom. It holds
+Actions tab → Weekly database backup → open a run → download the backup at the bottom. It holds
 `roles.sql`, `schema.sql` and `data.sql`. To restore into an empty Supabase project, run these in order
 (the connection string is that project's Session pooler URI):
 

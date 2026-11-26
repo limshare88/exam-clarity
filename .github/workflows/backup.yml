@@ -1,15 +1,15 @@
-# Daily backup of the Exam Clarity database, kept privately in this GitHub repo for 30 days.
-# Replaces the Supabase Pro plan's daily backups while the project is on the free plan.
-# Setup and restore steps: README.md, section "Daily database backup".
+# Weekly backup of the Exam Clarity database, kept privately in this GitHub repo for 30 days
+# (so roughly the last 4 backups are always available).
+# Setup and restore steps: README.md, section "Weekly database backup".
 #
 # Uploaded exam-paper PDFs/images themselves are not included -- they can always be re-uploaded
 # from the original files, and keeping them out keeps the backup small.
 
-name: Daily database backup
+name: Weekly database backup
 
 on:
   schedule:
-    - cron: "17 19 * * *"   # 3:17 am Malaysia time, every day
+    - cron: "17 19 * * 0"   # 3:17 am Malaysia time, every Sunday
   workflow_dispatch:         # "Run workflow" button, to back up now
 
 permissions:
