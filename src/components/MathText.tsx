@@ -49,7 +49,11 @@ export function splitMathSegments(text: string): TextSegment[] {
     .filter((part) => part.length > 0)
     .flatMap((part) => {
       const match = /^\$([^$\n]+)\$$/.exec(part);
-      return match?.[1] ? [{ type: "math" as const, content: stackFractions(match[1]) }] : splitPlainFractions(part);
+      if (match?.[1]) return [{ type: "math" as const, content: stackFractions(match[1]) }];
+      // An extraction that leaves a stray, unpaired "$" (e.g. two formulas run together
+      // with no separator) should never show that "$" to the student -- drop it rather
+      // than render it as if it were meant to be read.
+      return splitPlainFractions(part.replace(/\$/g, ""));
     });
 }
 

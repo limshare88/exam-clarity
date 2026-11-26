@@ -927,8 +927,8 @@ function Workspace() {
                         <p className="font-bold">➕ Steps to add next time</p>
                         <ul className="mt-2 list-disc space-y-1 pl-5">
                           {part.missing_steps.map((s, i) => (
-                            <li key={i} className="reading-text text-base">
-                              {s}
+                            <li key={i}>
+                              <MathText text={s} className="reading-text text-base" />
                             </li>
                           ))}
                         </ul>
@@ -976,8 +976,8 @@ function Workspace() {
                       <p className="font-bold">➕ Steps to add next time</p>
                       <ul className="mt-2 list-disc space-y-1 pl-5">
                         {feedback.missing_steps.map((s, i) => (
-                          <li key={i} className="reading-text text-base">
-                            {s}
+                          <li key={i}>
+                            <MathText text={s} className="reading-text text-base" />
                           </li>
                         ))}
                       </ul>
@@ -997,7 +997,7 @@ function Workspace() {
 
               <div className="rounded-2xl border-2 border-border bg-lavender p-4">
                 <p className="font-bold">{feedback.board_used} standard</p>
-                <p className="reading-text mt-1 text-sm">{feedback.rubric_basis}</p>
+                <MathText text={feedback.rubric_basis} className="reading-text mt-1 text-sm" />
               </div>
               <p className="reading-text rounded-2xl border-2 border-border bg-mint p-4 text-base">
                 💚 {feedback.encouragement}
@@ -1249,7 +1249,7 @@ function FeedbackBlock({ title, body }: { title: string; body: string }) {
   return (
     <div className="rounded-2xl border-2 border-border bg-lavender p-4">
       <p className="font-bold">{title}</p>
-      <p className="reading-text mt-1 text-base">{body}</p>
+      <MathText text={body} className="reading-text mt-1 text-base" />
     </div>
   );
 }
