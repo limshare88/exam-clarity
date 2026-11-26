@@ -7,7 +7,11 @@ import katex from "katex";
  * appropriately, instead of showing the raw "$...$" markup or (worse) letting a math
  * segment get torn apart word-by-word by whitespace-based tokenizers like VocabText's
  * tap-to-define splitting. */
-const MATH_SPLIT = /(\$[^$\n]+\$)/g;
+// The extraction prompt asks for single dollar signs, but occasionally echoes LaTeX's
+// "$$...$$" display-math convention instead (e.g. for a formula given on its own line) --
+// match that pair first so it renders as one clean span instead of leaving a stray "$" on
+// each side once the single-dollar pattern below claims the inner "$...$".
+const MATH_SPLIT = /(\$\$[^$\n]+\$\$|\$[^$\n]+\$)/g;
 
 export type TextSegment = { type: "math" | "text"; content: string };
 
@@ -48,11 +52,13 @@ export function splitMathSegments(text: string): TextSegment[] {
     .split(MATH_SPLIT)
     .filter((part) => part.length > 0)
     .flatMap((part) => {
-      const match = /^\$([^$\n]+)\$$/.exec(part);
-      if (match?.[1]) return [{ type: "math" as const, content: stackFractions(match[1]) }];
-      // An extraction that leaves a stray, unpaired "$" (e.g. two formulas run together
-      // with no separator) should never show that "$" to the student -- drop it rather
-      // than render it as if it were meant to be read.
+      const double = /^\$\$([^$\n]+)\$\$$/.exec(part);
+      const single = double ? null : /^\$([^$\n]+)\$$/.exec(part);
+      const content = double?.[1] ?? single?.[1];
+      if (content) return [{ type: "math" as const, content: stackFractions(content) }];
+      // Anything else odd (a stray unpaired "$", or two formulas run together with no
+      // separator) should never show that "$" to the student -- drop it rather than
+      // render it as if it were meant to be read.
       return splitPlainFractions(part.replace(/\$/g, ""));
     });
 }
